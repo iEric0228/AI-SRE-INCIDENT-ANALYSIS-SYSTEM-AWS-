@@ -1,0 +1,140 @@
+# Example Terraform Variables
+# Copy this file to terraform.tfvars and customize for your environment
+
+# ============================================================================
+# Core Configuration (REQUIRED)
+# ============================================================================
+
+environment = "dev"  # Options: dev, staging, prod
+
+# ============================================================================
+# AWS Configuration
+# ============================================================================
+
+aws_region   = "us-east-1"
+project_name = "ai-sre-incident-analysis"
+
+# ============================================================================
+# Notification Configuration
+# ============================================================================
+
+# Email addresses to receive incident notifications
+email_notification_endpoints = [
+  "oncall@example.com",
+  "sre-team@example.com"
+]
+
+# Name of Secrets Manager secret containing Slack webhook URL
+# Create this secret manually before deploying:
+# aws secretsmanager create-secret \
+#   --name ai-sre-incident-analysis/slack-webhook \
+#   --secret-string '{"url":"https://hooks.slack.com/services/YOUR/WEBHOOK/URL"}'
+slack_webhook_secret_name = "ai-sre-incident-analysis/slack-webhook"
+
+notification_topic_name = "incident-notifications"
+
+# ============================================================================
+# CloudWatch Alarm Thresholds
+# ============================================================================
+
+cpu_threshold              = 80   # Percentage
+error_rate_threshold       = 10   # Count
+memory_threshold           = 85   # Percentage
+alarm_evaluation_periods   = 2    # Number of periods
+alarm_period               = 60   # Seconds (60, 300, 900, or 3600)
+
+# ============================================================================
+# Lambda Configuration
+# ============================================================================
+
+lambda_log_level     = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+lambda_architecture  = "arm64" # arm64 or x86_64
+
+# Memory allocation per function (MB)
+lambda_memory_sizes = {
+  metrics_collector        = 512
+  logs_collector           = 512
+  deploy_context_collector = 512
+  correlation_engine       = 256
+  llm_analyzer             = 1024
+  notification_service     = 256
+}
+
+# Timeout per function (seconds)
+lambda_timeout_seconds = {
+  metrics_collector        = 20
+  logs_collector           = 20
+  deploy_context_collector = 20
+  correlation_engine       = 10
+  llm_analyzer             = 40
+  notification_service     = 15
+}
+
+# ============================================================================
+# DynamoDB Configuration
+# ============================================================================
+
+dynamodb_table_name            = "incident-analysis-store"
+dynamodb_billing_mode          = "PAY_PER_REQUEST"  # PAY_PER_REQUEST or PROVISIONED
+incident_retention_days        = 90                 # Days to retain incidents
+enable_point_in_time_recovery  = true
+
+# ============================================================================
+# Step Functions Configuration
+# ============================================================================
+
+workflow_timeout_seconds = 120   # Maximum workflow execution time
+enable_xray_tracing      = true  # Enable AWS X-Ray tracing
+
+# ============================================================================
+# LLM Configuration
+# ============================================================================
+
+bedrock_model_id              = "anthropic.claude-v2"
+bedrock_model_temperature     = 0.3    # 0.0 to 1.0 (lower = more deterministic)
+bedrock_max_tokens            = 1000   # Maximum tokens in response
+prompt_template_parameter_name = "/ai-sre-incident-analysis/prompt-template"
+
+# ============================================================================
+# Data Collection Configuration
+# ============================================================================
+
+metrics_lookback_minutes = 60   # Minutes to look back for metrics
+logs_lookback_minutes    = 30   # Minutes to look back for logs
+changes_lookback_hours   = 24   # Hours to look back for changes
+max_log_entries          = 100  # Maximum log entries per incident
+max_context_size_bytes   = 51200 # 50KB maximum context for LLM
+
+# ============================================================================
+# Observability Configuration
+# ============================================================================
+
+cloudwatch_log_retention_days = 7     # Days to retain CloudWatch logs
+enable_detailed_monitoring    = true  # Enable detailed CloudWatch monitoring
+create_cloudwatch_alarms      = true  # Create alarms for the system itself
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+
+kms_key_deletion_window = 30    # Days before KMS key deletion (7-30)
+enable_kms_key_rotation = true  # Enable automatic KMS key rotation
+secrets_rotation_days   = 90    # Days between secret rotation
+
+# ============================================================================
+# Resource Tags
+# ============================================================================
+
+tags = {
+  Project     = "AI-SRE-Portfolio"
+  ManagedBy   = "Terraform"
+  Purpose     = "Incident-Analysis"
+  Owner       = "SRE-Team"
+  CostCenter  = "Engineering"
+}
+
+# Additional environment-specific tags
+additional_tags = {
+  Environment = "dev"
+  Terraform   = "true"
+}

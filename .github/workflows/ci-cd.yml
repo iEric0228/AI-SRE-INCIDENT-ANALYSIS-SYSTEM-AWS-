@@ -1,0 +1,543 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  id-token: write  # Required for OIDC
+  contents: read
+  pull-requests: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  TERRAFORM_VERSION: '1.6.0'
+  AWS_REGION: us-east-1
+
+jobs:
+  # ============================================================================
+  # Code Quality Checks
+  # ============================================================================
+  
+  python-lint:
+    name: Python Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run black (code formatting)
+        run: black --check --diff src/ tests/
+
+      - name: Run flake8 (linting)
+        run: flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203,W503
+
+      - name: Run mypy (type checking)
+        run: mypy src/ --ignore-missing-imports --no-strict-optional
+
+      - name: Run isort (import sorting)
+        run: isort --check-only --diff src/ tests/
+
+  terraform-validate:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Terraform Init (main)
+        run: |
+          cd terraform
+          terraform init -backend=false
+
+      - name: Terraform Validate (main)
+        run: |
+          cd terraform
+          terraform validate
+
+      - name: Terraform Init (test-scenario)
+        run: |
+          cd terraform/test-scenario
+          terraform init -backend=false
+
+      - name: Terraform Validate (test-scenario)
+        run: |
+          cd terraform/test-scenario
+          terraform validate
+
+  # ============================================================================
+  # Testing
+  # ============================================================================
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest tests/unit/ \
+            --cov=src \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term \
+            --cov-fail-under=80 \
+            -v
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          flags: unit-tests
+          name: unit-test-coverage
+
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+  property-tests:
+    name: Property-Based Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run property tests (PR - 20 iterations)
+        if: github.event_name == 'pull_request'
+        env:
+          HYPOTHESIS_PROFILE: dev
+        run: |
+          pytest tests/property/ \
+            -v \
+            --tb=short \
+            -m "not slow"
+
+      - name: Run property tests (Merge - 100 iterations)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          pytest tests/property/ \
+            -v \
+            --tb=short
+
+  infrastructure-tests:
+    name: Infrastructure Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run infrastructure tests
+        run: |
+          pytest tests/infrastructure/ \
+            -v \
+            --tb=short
+
+  # ============================================================================
+  # Terraform Plan (PR only)
+  # ============================================================================
+
+  terraform-plan:
+    name: Terraform Plan (Dev)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [python-lint, terraform-validate, unit-tests, property-tests, infrastructure-tests]
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-TerraformPlan
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          cd terraform
+          terraform plan \
+            -var="environment=dev" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -out=tfplan \
+            -no-color
+        continue-on-error: true
+
+      - name: Generate Plan Summary
+        run: |
+          cd terraform
+          terraform show -no-color tfplan > plan_output.txt
+          
+          # Create summary for PR comment
+          echo "## Terraform Plan Summary" > plan_summary.md
+          echo "" >> plan_summary.md
+          echo "**Environment:** dev" >> plan_summary.md
+          echo "**Region:** ${{ env.AWS_REGION }}" >> plan_summary.md
+          echo "" >> plan_summary.md
+          echo "### Changes" >> plan_summary.md
+          echo '```' >> plan_summary.md
+          grep -A 100 "Terraform will perform" plan_output.txt | head -50 >> plan_summary.md || echo "No changes detected" >> plan_summary.md
+          echo '```' >> plan_summary.md
+
+      - name: Comment PR with Plan
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform/plan_summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: plan
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ============================================================================
+  # Integration Tests (Dev Environment)
+  # ============================================================================
+
+  integration-tests:
+    name: Integration Tests (Dev)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python-lint, terraform-validate, unit-tests, property-tests, infrastructure-tests]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-IntegrationTests
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run integration tests
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ENVIRONMENT: dev
+        run: |
+          pytest tests/integration/ \
+            -v \
+            --tb=short \
+            --timeout=300
+
+  # ============================================================================
+  # Deploy to Dev (on merge to main)
+  # ============================================================================
+
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python-lint, terraform-validate, unit-tests, property-tests, infrastructure-tests]
+    environment:
+      name: dev
+      url: https://console.aws.amazon.com/states/home?region=${{ env.AWS_REGION }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-DeployDev
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          cd terraform
+          terraform apply \
+            -var="environment=dev" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -auto-approve
+
+      - name: Generate Deployment Summary
+        run: |
+          cd terraform
+          echo "## Deployment Summary - Dev Environment" > deployment_summary.md
+          echo "" >> deployment_summary.md
+          echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> deployment_summary.md
+          echo "**Region:** ${{ env.AWS_REGION }}" >> deployment_summary.md
+          echo "**Commit:** ${{ github.sha }}" >> deployment_summary.md
+          echo "" >> deployment_summary.md
+          echo "### Outputs" >> deployment_summary.md
+          echo '```' >> deployment_summary.md
+          terraform output -no-color >> deployment_summary.md
+          echo '```' >> deployment_summary.md
+
+      - name: Upload Deployment Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-summary-dev
+          path: terraform/deployment_summary.md
+
+      - name: Create Prompt Template
+        run: |
+          python scripts/create_prompt_template.py
+
+  # ============================================================================
+  # Deploy to Staging (manual trigger)
+  # ============================================================================
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://console.aws.amazon.com/states/home?region=${{ env.AWS_REGION }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-DeployStaging
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply \
+            -var="environment=staging" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -auto-approve
+
+      - name: Generate Deployment Summary
+        run: |
+          cd terraform
+          echo "## Deployment Summary - Staging Environment" > deployment_summary.md
+          echo "" >> deployment_summary.md
+          echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> deployment_summary.md
+          echo "**Region:** ${{ env.AWS_REGION }}" >> deployment_summary.md
+          echo "**Commit:** ${{ github.sha }}" >> deployment_summary.md
+          echo "" >> deployment_summary.md
+          echo "### Outputs" >> deployment_summary.md
+          echo '```' >> deployment_summary.md
+          terraform output -no-color >> deployment_summary.md
+          echo '```' >> deployment_summary.md
+
+      - name: Upload Deployment Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-summary-staging
+          path: terraform/deployment_summary.md
+
+      - name: Create Prompt Template
+        run: |
+          python scripts/create_prompt_template.py
+
+  # ============================================================================
+  # Deploy to Production (manual trigger with approval)
+  # ============================================================================
+
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    environment:
+      name: production
+      url: https://console.aws.amazon.com/states/home?region=${{ env.AWS_REGION }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-DeployProd
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan \
+            -var="environment=prod" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply tfplan
+
+      - name: Generate Deployment Summary
+        run: |
+          cd terraform
+          echo "## Deployment Summary - Production Environment" > deployment_summary.md
+          echo "" >> deployment_summary.md
+          echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> deployment_summary.md
+          echo "**Region:** ${{ env.AWS_REGION }}" >> deployment_summary.md
+          echo "**Commit:** ${{ github.sha }}" >> deployment_summary.md
+          echo "" >> deployment_summary.md
+          echo "### Outputs" >> deployment_summary.md
+          echo '```' >> deployment_summary.md
+          terraform output -no-color >> deployment_summary.md
+          echo '```' >> deployment_summary.md
+
+      - name: Upload Deployment Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-summary-prod
+          path: terraform/deployment_summary.md
+
+      - name: Create Prompt Template
+        run: |
+          python scripts/create_prompt_template.py
+
+      - name: Notify Deployment
+        run: |
+          echo "🚀 Production deployment completed successfully!"
+          echo "Review the deployment summary artifact for details."

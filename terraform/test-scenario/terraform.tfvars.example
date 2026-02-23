@@ -1,0 +1,27 @@
+# Example Terraform Variables for Test Scenario
+# Copy this file to terraform.tfvars and customize for your environment
+
+# AWS region where test infrastructure will be deployed
+aws_region = "us-east-1"
+
+# EC2 instance type (t2.micro is free tier eligible)
+instance_type = "t2.micro"
+
+# Name of your SSH key pair (must already exist in AWS)
+# Create one in AWS Console: EC2 > Key Pairs > Create Key Pair
+key_pair_name = "my-key-pair"
+
+# CIDR blocks allowed to SSH (IMPORTANT: Restrict to your IP for security!)
+# Find your IP: curl ifconfig.me
+# Example: ["203.0.113.0/32"]
+allowed_ssh_cidr_blocks = ["0.0.0.0/0"]  # WARNING: Allows SSH from anywhere!
+
+# CPU threshold that triggers the alarm (%)
+# Lower values make it easier to trigger (e.g., 10% for testing)
+cpu_threshold = 50
+
+# How often to evaluate the metric (seconds)
+alarm_period = 60
+
+# How many consecutive periods must breach before alarming
+evaluation_periods = 1

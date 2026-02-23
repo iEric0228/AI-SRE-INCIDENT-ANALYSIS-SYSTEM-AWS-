@@ -1,0 +1,646 @@
+# AI-Assisted SRE Incident Analysis System
+
+> An event-driven AWS serverless pipeline that automatically detects infrastructure issues, collects contextual data, and generates AI-powered root-cause hypotheses using Amazon Bedrock.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Terraform](https://img.shields.io/badge/terraform-1.5+-purple.svg)](https://www.terraform.io/)
+[![AWS](https://img.shields.io/badge/AWS-Serverless-orange.svg)](https://aws.amazon.com/)
+
+## Overview
+
+This portfolio project demonstrates production-grade incident management architecture using AWS serverless technologies and AI. The system is **advisory-only** (no auto-remediation) and showcases modern SRE practices including:
+
+- Event-driven serverless architecture on AWS
+- Parallel data collection with Step Functions orchestration
+- LLM-powered root-cause analysis using Amazon Bedrock (Claude)
+- Security-first design with least-privilege IAM policies
+- Complete observability with structured logging and X-Ray tracing
+- Graceful degradation with partial failure handling
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Key Features](#key-features)
+- [Quick Start](#quick-start)
+- [Setup Instructions](#setup-instructions)
+- [Usage Examples](#usage-examples)
+- [Testing](#testing-strategy)
+- [Cost Estimation](#cost-estimation)
+- [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
+- [Technology Stack](#technology-stack)
+
+## Architecture
+
+### High-Level Architecture Diagram
+
+```mermaid
+graph TB
+    CW[CloudWatch Alarms] -->|State Change| EB[EventBridge]
+    EB -->|Match Pattern| SNS[SNS Topic]
+    SNS -->|Trigger| SF[Step Functions Orchestrator]
+    
+    SF -->|Parallel Invoke| MC[Metrics Collector Lambda]
+    SF -->|Parallel Invoke| LC[Logs Collector Lambda]
+    SF -->|Parallel Invoke| DC[Deploy Context Collector Lambda]
+    
+    MC -->|Metrics JSON| CE[Correlation Engine Lambda]
+    LC -->|Logs JSON| CE
+    DC -->|Changes JSON| CE
+    
+    CE -->|Structured Context| LLM[LLM Analyzer Lambda]
+    LLM -->|Analysis Report| NS[Notification Service Lambda]
+    LLM -->|Analysis Report| DB[(DynamoDB Incident Store)]
+    
+    NS -->|Webhook| Slack[Slack Channel]
+    NS -->|SNS Email| Email[Email Distribution]
+    
+    SM[Secrets Manager] -.->|Slack Webhook| NS
+    SM -.->|Email Config| NS
+    PS[Parameter Store] -.->|Prompt Template| LLM
+    BR[Amazon Bedrock] -.->|Claude Model| LLM
+    
+    style CW fill:#ff9999
+    style SF fill:#ffcc99
+    style LLM fill:#99ccff
+    style DB fill:#cc99ff
+    style Slack fill:#99ff99
+```
+
+### Architecture Patterns
+
+| Pattern | Implementation | Benefit |
+|---------|---------------|---------|
+| **Event-Driven** | SNS + EventBridge for component communication | Loose coupling, scalability |
+| **Parallel Fan-Out** | Step Functions parallel state | Minimize latency (3 collectors run simultaneously) |
+| **Correlation Layer** | Dedicated Lambda for data normalization | Unified data structure for LLM |
+| **Advisory-Only AI** | LLM with explicit IAM denies | Safe recommendations without mutation risk |
+| **Graceful Degradation** | Catch blocks in Step Functions | Workflow continues with partial data |
+
+## Key Features
+
+### Automatic Incident Detection
+CloudWatch Alarms trigger the analysis workflow automatically when thresholds are breached.
+
+### Intelligent Data Collection
+Three specialized collectors run in parallel:
+- **Metrics Collector**: CloudWatch metrics with statistical analysis
+- **Logs Collector**: Error/warning logs with filtering and limiting
+- **Deploy Context Collector**: Recent infrastructure changes from CloudTrail
+
+### AI-Powered Analysis
+Amazon Bedrock (Claude) generates:
+- Root-cause hypotheses with confidence levels
+- Supporting evidence from collected data
+- Contributing factors analysis
+- Actionable remediation recommendations
+
+### Multi-Channel Notifications
+Structured alerts delivered via:
+- Slack webhooks with rich formatting
+- Email via SNS with HTML and plain text
+- Incident store links for historical analysis
+
+### Persistent Incident History
+- 90-day retention in DynamoDB
+- Queryable by resource ARN, severity, or time range
+- Automatic expiration via TTL
+
+### Complete Observability
+- Structured JSON logging with correlation IDs
+- Custom CloudWatch metrics for workflow tracking
+- X-Ray distributed tracing
+- CloudWatch Alarms for system health
+
+## Quick Start
+
+### Prerequisites
+
+- AWS account with appropriate permissions
+- AWS CLI configured (`aws configure`)
+- Terraform >= 1.5.0
+- Python 3.11+
+- Git
+
+### 5-Minute Setup
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd ai-sre-incident-analysis
+
+# Set up Python environment
+python3.11 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Deploy test infrastructure
+cd terraform/test-scenario
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your SSH key name
+terraform init && terraform apply
+
+# Create secrets
+aws secretsmanager create-secret \
+  --name ai-sre-incident-analysis-slack-webhook \
+  --secret-string '{"webhook_url":"https://hooks.slack.com/services/YOUR/WEBHOOK/URL"}'
+
+# Create prompt template
+python scripts/create_prompt_template.py
+
+# Deploy main infrastructure
+cd ../terraform
+cp terraform.tfvars.example terraform.tfvars
+terraform init && terraform apply
+
+# Trigger test alarm
+./scripts/trigger-test-alarm.sh
+```
+
+## Setup Instructions
+
+### Step 1: AWS Account Setup
+
+Configure AWS CLI with appropriate credentials:
+
+```bash
+aws configure
+# Enter Access Key ID, Secret Access Key, Region (us-east-1), Output format (json)
+
+# Verify configuration
+aws sts get-caller-identity
+```
+
+### Step 2: Clone and Install Dependencies
+
+```bash
+git clone <repository-url>
+cd ai-sre-incident-analysis
+
+# Create virtual environment
+python3.11 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
+
+### Step 3: Deploy Test Infrastructure
+
+Deploy a simple EC2 instance with CloudWatch Alarm for testing:
+
+```bash
+cd terraform/test-scenario
+
+# Copy and configure variables
+cp terraform.tfvars.example terraform.tfvars
+nano terraform.tfvars  # Update with your SSH key name and allowed IP
+
+# Initialize and deploy
+terraform init
+terraform apply
+```
+
+Save the outputs:
+- `instance_id`: EC2 instance ID
+- `alarm_arn`: CloudWatch Alarm ARN
+- `public_ip`: EC2 public IP for SSH
+
+### Step 4: Create AWS Secrets
+
+```bash
+# Slack webhook secret
+aws secretsmanager create-secret \
+  --name ai-sre-incident-analysis-slack-webhook \
+  --description "Slack webhook URL for incident notifications" \
+  --secret-string '{"webhook_url":"https://hooks.slack.com/services/YOUR/WEBHOOK/URL"}'
+
+# Email configuration secret
+aws secretsmanager create-secret \
+  --name ai-sre-incident-analysis-email-config \
+  --description "Email configuration for incident notifications" \
+  --secret-string '{"from_address":"incidents@example.com","recipients":["oncall@example.com"]}'
+```
+
+### Step 5: Create LLM Prompt Template
+
+```bash
+# From project root
+python scripts/create_prompt_template.py
+```
+
+This stores the versioned prompt template in AWS Systems Manager Parameter Store.
+
+### Step 6: Deploy Main Infrastructure
+
+```bash
+cd terraform
+
+# Copy and configure variables
+cp terraform.tfvars.example terraform.tfvars
+nano terraform.tfvars  # Update with your configuration
+
+# Initialize Terraform
+terraform init
+
+# Plan deployment
+terraform plan -out=tfplan
+
+# Apply deployment
+terraform apply tfplan
+```
+
+Key outputs:
+- `orchestrator_arn`: Step Functions state machine ARN
+- `incident_table_name`: DynamoDB table name
+- `notification_topic_arn`: SNS topic ARN
+
+## Usage Examples
+
+### Triggering a Test Alarm
+
+Use the provided script to trigger the test alarm:
+
+```bash
+./scripts/trigger-test-alarm.sh
+```
+
+This will:
+1. SSH into the EC2 instance
+2. Install `stress-ng` CPU stress testing tool
+3. Run CPU stress for 2 minutes
+4. Monitor alarm state until it triggers
+
+### Viewing Incidents in DynamoDB
+
+```bash
+# Query all incidents
+aws dynamodb scan --table-name incident-analysis-store
+
+# Query incidents for specific resource
+aws dynamodb query \
+  --table-name incident-analysis-store \
+  --index-name ResourceIndex \
+  --key-condition-expression "resourceArn = :arn" \
+  --expression-attribute-values '{":arn":{"S":"arn:aws:ec2:us-east-1:123456789012:instance/i-abc123"}}'
+
+# Query high-severity incidents
+aws dynamodb query \
+  --table-name incident-analysis-store \
+  --index-name SeverityIndex \
+  --key-condition-expression "severity = :sev" \
+  --expression-attribute-values '{":sev":{"S":"high"}}'
+```
+
+### Viewing Step Functions Execution
+
+```bash
+# List recent executions
+aws stepfunctions list-executions \
+  --state-machine-arn <orchestrator-arn> \
+  --max-results 10
+
+# Get execution details
+aws stepfunctions describe-execution \
+  --execution-arn <execution-arn>
+
+# Get execution history
+aws stepfunctions get-execution-history \
+  --execution-arn <execution-arn>
+```
+
+### Viewing CloudWatch Logs
+
+```bash
+# View metrics collector logs
+aws logs tail /aws/lambda/metrics-collector --follow
+
+# View LLM analyzer logs
+aws logs tail /aws/lambda/llm-analyzer --follow
+
+# View Step Functions logs
+aws logs tail /aws/vendedlogs/states/incident-orchestrator --follow
+```
+
+### Manual Incident Trigger
+
+You can manually trigger an incident analysis by publishing to the SNS topic:
+
+```bash
+aws sns publish \
+  --topic-arn <notification-topic-arn> \
+  --message '{
+    "incidentId": "test-001",
+    "alarmName": "HighCPUAlarm",
+    "resourceArn": "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+    "timestamp": "2024-01-15T14:30:00Z",
+    "alarmState": "ALARM",
+    "metricName": "CPUUtilization",
+    "namespace": "AWS/EC2"
+  }'
+```
+
+## Testing Strategy
+
+### Test Types
+
+The project includes comprehensive testing at multiple levels:
+
+| Test Type | Framework | Coverage | Purpose |
+|-----------|-----------|----------|---------|
+| **Unit Tests** | pytest | 80%+ | Individual Lambda function logic |
+| **Property Tests** | Hypothesis | 31 properties | Data validation and invariants |
+| **Integration Tests** | pytest + moto | End-to-end | Complete workflow validation |
+| **Infrastructure Tests** | pytest + Terraform | IAM policies | Security and configuration |
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run unit tests only
+pytest tests/unit/ -v
+
+# Run property tests with full iterations
+HYPOTHESIS_PROFILE=ci pytest tests/property/ -v
+
+# Run with coverage report
+pytest --cov=src --cov-report=html
+
+# Run specific test file
+pytest tests/unit/test_metrics_collector.py -v
+
+# Run integration tests
+pytest tests/integration/ -v
+```
+
+### Property-Based Testing
+
+The system validates 31 correctness properties using Hypothesis:
+
+- ✅ Event routing completeness
+- ✅ Time range calculation correctness
+- ✅ Data correlation and merging
+- ✅ Timestamp normalization
+- ✅ Context size constraints
+- ✅ LLM prompt construction
+- ✅ Notification message completeness
+- ✅ Graceful degradation with partial data
+- ✅ TTL configuration correctness
+- ✅ And 22 more...
+
+## Cost Estimation
+
+### Monthly Cost Breakdown (Low Volume - 100 incidents/month)
+
+| Service | Usage | Monthly Cost |
+|---------|-------|--------------|
+| **Lambda** | 6 functions, 100 invocations | $0.00 (free tier) |
+| **Step Functions** | Express, 100 executions | $0.00 (free tier) |
+| **DynamoDB** | On-demand, 100 incidents | $0.25 |
+| **CloudWatch Logs** | 7-day retention | $0.50 |
+| **Amazon Bedrock** | Claude, 100 invocations | $3.00 |
+| **CloudWatch Alarms** | 10 alarms | $0.00 (free tier) |
+| **X-Ray** | Traces | $0.00 (free tier) |
+
+**Total Estimated Monthly Cost:** $3.75
+
+### Cost Optimization Features
+
+- ✅ **ARM64 Lambda**: 20% cost reduction vs x86
+- ✅ **Express Workflows**: 5x cheaper than Standard workflows
+- ✅ **On-Demand DynamoDB**: No provisioned capacity costs
+- ✅ **7-Day Log Retention**: Reduced storage costs
+- ✅ **90-Day TTL**: Automatic data expiration
+
+### Free Tier Eligibility
+
+- Lambda: 1M requests/month free
+- Step Functions: 4,000 state transitions/month free
+- DynamoDB: 25 GB storage free
+- CloudWatch: 10 alarms free
+
+**Expected cost within free tier:** $0-5/month
+
+## Troubleshooting
+
+### Alarm Not Triggering
+
+**Problem**: CloudWatch Alarm stays in OK state after CPU spike.
+
+**Solutions**:
+- Verify alarm threshold: `aws cloudwatch describe-alarms --alarm-names test-incident-high-cpu`
+- Check metrics are being published: `aws cloudwatch get-metric-statistics ...`
+- Lower threshold to 10% for easier triggering
+- Increase stress test duration to 5 minutes
+
+### Lambda Function Errors
+
+**Problem**: Lambda function fails with timeout or permission errors.
+
+**Solutions**:
+- Check CloudWatch Logs for error details
+- Verify IAM role has required permissions
+- Increase Lambda timeout in Terraform configuration
+- Check Lambda memory allocation is sufficient
+
+### LLM Analysis Fails
+
+**Problem**: LLM analyzer returns fallback report.
+
+**Solutions**:
+- Verify Bedrock is enabled in your AWS region
+- Check IAM role has `bedrock:InvokeModel` permission
+- Verify prompt template exists in Parameter Store
+- Check structured context size is < 50KB
+
+### Notification Not Sent
+
+**Problem**: No Slack or email notification received.
+
+**Solutions**:
+- Verify Slack webhook URL in Secrets Manager is correct
+- Test webhook manually: `curl -X POST -H 'Content-type: application/json' --data '{"text":"Test"}' <webhook-url>`
+- Check SNS topic has email subscription confirmed
+- Review notification service CloudWatch Logs
+
+### DynamoDB Query Errors
+
+**Problem**: Cannot query incidents by resource or severity.
+
+**Solutions**:
+- Verify Global Secondary Indexes exist: `aws dynamodb describe-table --table-name incident-analysis-store`
+- Use correct index name in query: `ResourceIndex` or `SeverityIndex`
+- Ensure query uses partition key of the index
+
+### Terraform State Lock
+
+**Problem**: Terraform state is locked.
+
+**Solutions**:
+```bash
+# List locks
+aws dynamodb scan --table-name terraform-state-lock
+
+# Force unlock (use with caution)
+terraform force-unlock <lock-id>
+```
+
+## Documentation
+
+- **[DEMO.md](docs/DEMO.md)**: Complete demo walkthrough with screenshots
+- **[DESIGN.md](docs/DESIGN.md)**: Architecture patterns and design decisions
+- **[DEPLOYMENT.md](terraform/DEPLOYMENT.md)**: Detailed Terraform deployment guide
+- **[PROMPT_TEMPLATE.md](docs/PROMPT_TEMPLATE.md)**: LLM prompt engineering documentation
+- **[Requirements](.kiro/specs/ai-sre-incident-analysis/requirements.md)**: Detailed requirements and acceptance criteria
+- **[Design](.kiro/specs/ai-sre-incident-analysis/design.md)**: Technical design and architecture decisions
+- **[Tasks](.kiro/specs/ai-sre-incident-analysis/tasks.md)**: Implementation plan and task breakdown
+
+## Technology Stack
+
+### Infrastructure
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Cloud Platform** | AWS | Serverless infrastructure |
+| **IaC** | Terraform | Infrastructure as Code |
+| **Orchestration** | Step Functions (Express) | Workflow coordination |
+| **Compute** | Lambda (Python 3.11+, ARM64) | Serverless functions |
+| **Storage** | DynamoDB (on-demand) | Incident persistence |
+| **Event Bus** | EventBridge + SNS | Event routing |
+| **AI/ML** | Amazon Bedrock (Claude) | Root-cause analysis |
+| **Secrets** | Secrets Manager | Credential storage |
+| **Configuration** | Parameter Store | Template versioning |
+| **Observability** | CloudWatch + X-Ray | Logging and tracing |
+
+### Development
+
+- **Language**: Python 3.11+
+- **AWS SDK**: boto3
+- **Testing**: pytest, Hypothesis (property-based testing), moto (AWS mocking)
+- **CI/CD**: GitHub Actions with OIDC authentication
+- **HTTP Client**: requests (for Slack webhooks)
+
+## Project Structure
+
+```text
+.
+├── .github/workflows/        # CI/CD pipelines
+│   └── ci-cd.yml            # GitHub Actions workflow
+├── .kiro/specs/             # Feature specifications
+│   └── ai-sre-incident-analysis/
+│       ├── requirements.md  # Requirements and acceptance criteria
+│       ├── design.md        # Technical design
+│       └── tasks.md         # Implementation plan
+├── src/                     # Lambda function source code
+│   ├── metrics_collector/
+│   ├── logs_collector/
+│   ├── deploy_context_collector/
+│   ├── correlation_engine/
+│   ├── llm_analyzer/
+│   ├── notification_service/
+│   ├── event_transformer/
+│   └── shared/              # Shared utilities and models
+├── terraform/               # Infrastructure as Code
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── modules/             # Reusable Terraform modules
+│   │   ├── lambda/
+│   │   ├── step-functions/
+│   │   ├── dynamodb/
+│   │   ├── eventbridge/
+│   │   ├── iam/
+│   │   ├── secrets/
+│   │   └── cloudwatch-alarms/
+│   └── test-scenario/       # Test infrastructure
+├── tests/                   # Test suite
+│   ├── unit/
+│   ├── property/
+│   ├── integration/
+│   ├── infrastructure/
+│   └── conftest.py
+├── scripts/                 # Utility scripts
+│   ├── create_prompt_template.py
+│   ├── trigger-test-alarm.sh
+│   ├── reset-test-alarm.sh
+│   ├── capture-alarm-event.sh
+│   └── setup-github-oidc.sh
+├── test-data/               # Captured AWS event payloads
+├── docs/                    # Documentation
+│   ├── DEMO.md
+│   ├── DESIGN.md
+│   ├── PROMPT_TEMPLATE.md
+│   └── TASK-0-SUMMARY.md
+├── requirements.txt         # Python dependencies
+├── requirements-dev.txt     # Development dependencies
+└── README.md               # This file
+```
+
+## Security
+
+### Security Features
+
+- ✅ **Least-Privilege IAM**: Each Lambda has minimal required permissions
+- ✅ **LLM Restrictions**: Explicit deny for EC2, RDS, IAM, and mutating APIs
+- ✅ **Secrets Management**: All credentials in AWS Secrets Manager
+- ✅ **No Long-Lived Credentials**: OIDC for CI/CD authentication
+- ✅ **Encryption at Rest**: KMS encryption for DynamoDB and Secrets Manager
+- ✅ **Encryption in Transit**: TLS for all API calls
+- ✅ **Audit Logging**: CloudTrail enabled for all API calls
+
+### IAM Policy Example
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel"],
+      "Resource": "arn:aws:bedrock:*::foundation-model/anthropic.claude-v2"
+    },
+    {
+      "Effect": "Deny",
+      "Action": ["ec2:*", "rds:*", "iam:*", "lambda:Update*", "lambda:Delete*"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+## Learning Objectives
+
+This project demonstrates:
+
+1. **Event-Driven Architecture**: Loose coupling via SNS/EventBridge for scalability
+2. **Parallel Processing**: Step Functions fan-out pattern for performance
+3. **AI Integration**: Structured LLM prompts with Amazon Bedrock for intelligent analysis
+4. **Security Best Practices**: Least-privilege IAM, explicit denies, no credentials in code
+5. **Observability**: Structured logging, custom metrics, distributed tracing
+6. **Graceful Degradation**: Partial failures don't block workflow completion
+7. **Infrastructure as Code**: Reproducible, version-controlled Terraform modules
+8. **Property-Based Testing**: Hypothesis for comprehensive correctness validation
+
+## Contributing
+
+This is a portfolio project, but suggestions and feedback are welcome! Please open an issue to discuss proposed changes.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+Inspired by production incident management platforms:
+
+- **Resolve AI**: Agentic AI for production engineering
+- **PagerDuty AIOps**: AI-powered incident response
+- **Datadog Watchdog**: Automated anomaly detection
+- **AWS DevOps Agent**: Autonomous on-call engineer
+
+---
+
