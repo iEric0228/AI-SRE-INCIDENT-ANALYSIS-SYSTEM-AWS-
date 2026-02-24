@@ -9,7 +9,7 @@
 
 ## Overview
 
-This portfolio project demonstrates production-grade incident management architecture using AWS serverless technologies and AI. The system is **advisory-only** (no auto-remediation) and showcases modern SRE practices including:
+Thisproject demonstrates production-grade incident management architecture using AWS serverless technologies and AI. The system is **advisory-only** (no auto-remediation) and showcases modern SRE practices including:
 
 - Event-driven serverless architecture on AWS
 - Parallel data collection with Step Functions orchestration
