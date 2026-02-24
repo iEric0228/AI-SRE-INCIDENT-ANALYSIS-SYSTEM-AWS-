@@ -9,23 +9,23 @@ Validates Requirements 11.1, 11.2, 11.3, 11.6
 
 import json
 import logging
-import sys
 import os
+import sys
 from datetime import datetime
-from unittest.mock import Mock, patch, call, MagicMock
 from io import StringIO
+from unittest.mock import MagicMock, Mock, call, patch
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from shared.structured_logger import StructuredLogger, get_correlation_id
 from shared.metrics import (
-    put_metric,
     put_collector_success_metric,
     put_llm_invocation_metric,
+    put_metric,
     put_notification_delivery_metric,
     put_workflow_duration_metric,
 )
+from shared.structured_logger import StructuredLogger, get_correlation_id
 
 
 class TestStructuredLogger:

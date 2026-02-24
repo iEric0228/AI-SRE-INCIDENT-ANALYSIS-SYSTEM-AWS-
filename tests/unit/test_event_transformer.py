@@ -8,15 +8,15 @@ Requirements: 1.1, 1.2, 1.3
 """
 
 import json
+
+# Import the lambda function
+import os
 import uuid
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
-
-# Import the lambda function
-import os
 
 # Set environment variable before importing
 os.environ.setdefault("SNS_TOPIC_ARN", "")

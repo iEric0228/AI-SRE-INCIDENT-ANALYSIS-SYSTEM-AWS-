@@ -8,12 +8,14 @@ fields (incident ID, alarm name, resource ARN, timestamp, alarm state).
 Validates Requirements 1.1, 1.2, 1.3
 """
 
-from datetime import datetime, timezone
-from hypothesis import given, strategies as st, assume
-from hypothesis.strategies import composite
-import sys
 import os
+import sys
 import uuid
+from datetime import datetime, timezone
+
+from hypothesis import assume, given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))

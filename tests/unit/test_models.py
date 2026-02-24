@@ -4,28 +4,30 @@ Unit tests for data models.
 Tests serialization, deserialization, and validation of all data models.
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
+
 from shared.models import (
+    AlarmInfo,
+    Analysis,
+    AnalysisMetadata,
+    AnalysisReport,
+    ChangeEvent,
+    CompletenessInfo,
+    DeployContextCollectorOutput,
     IncidentEvent,
-    MetricDatapoint,
-    MetricStatistics,
-    MetricData,
-    MetricsCollectorOutput,
+    IncidentRecord,
     LogEntry,
     LogsCollectorOutput,
-    ChangeEvent,
-    DeployContextCollectorOutput,
-    ResourceInfo,
-    AlarmInfo,
-    CompletenessInfo,
-    StructuredContext,
-    AnalysisMetadata,
-    Analysis,
-    AnalysisReport,
+    MetricData,
+    MetricDatapoint,
+    MetricsCollectorOutput,
+    MetricStatistics,
     NotificationDeliveryStatus,
     NotificationOutput,
-    IncidentRecord,
+    ResourceInfo,
+    StructuredContext,
 )
 
 

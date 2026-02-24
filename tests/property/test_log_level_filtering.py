@@ -7,11 +7,13 @@ only ERROR/WARN/CRITICAL levels are returned by the logs collector.
 Validates Requirements 4.2
 """
 
-from datetime import datetime, timezone
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
 import os
+import sys
+from datetime import datetime, timezone
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))

@@ -8,19 +8,21 @@ Validates Requirement 14.3
 """
 
 import json
-import sys
 import os
+import sys
 from datetime import datetime
-from unittest.mock import patch, MagicMock, call
-from hypothesis import given, strategies as st, settings
-from hypothesis.strategies import composite
-from botocore.exceptions import ClientError
+from unittest.mock import MagicMock, call, patch
 
-# Import shared models
-from shared.models import AnalysisReport, Analysis, AnalysisMetadata, Confidence
+from botocore.exceptions import ClientError
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Import notification service using package-qualified import
 from notification_service import lambda_function as notification_lambda
+
+# Import shared models
+from shared.models import Analysis, AnalysisMetadata, AnalysisReport, Confidence
 
 get_slack_webhook_url = notification_lambda.get_slack_webhook_url
 lambda_handler = notification_lambda.lambda_handler

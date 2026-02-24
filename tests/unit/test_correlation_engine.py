@@ -13,7 +13,8 @@ Requirements: 6.1, 6.2, 6.3, 6.4, 6.6
 
 import json
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 # Import the lambda function

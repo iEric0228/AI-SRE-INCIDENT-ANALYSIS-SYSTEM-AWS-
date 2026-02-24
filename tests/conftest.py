@@ -2,14 +2,21 @@
 Pytest configuration and shared fixtures for AI-SRE Incident Analysis System tests.
 """
 
-import json
 import os
-from datetime import datetime, timedelta
-from typing import Dict, Any
-from unittest.mock import MagicMock
 
-import pytest
-from hypothesis import settings, Verbosity
+# Set AWS_DEFAULT_REGION before any boto3 clients are created at module level.
+# Lambda source files initialize boto3 clients at import time, and without a
+# region configured (e.g., in CI environments with no ~/.aws/config), boto3
+# raises botocore.exceptions.NoRegionError during test collection.
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+
+import json  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
+from typing import Any, Dict  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
+
+import pytest  # noqa: E402
+from hypothesis import Verbosity, settings  # noqa: E402
 
 # Hypothesis profiles for property-based testing
 settings.register_profile("dev", max_examples=20, verbosity=Verbosity.normal)

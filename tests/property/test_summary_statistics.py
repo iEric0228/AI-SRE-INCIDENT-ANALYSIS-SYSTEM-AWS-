@@ -7,22 +7,24 @@ for metrics, logs, and changes data.
 Validates Requirement 6.4
 """
 
-from datetime import datetime, timezone
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
 import os
+import sys
+from datetime import datetime, timezone
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Import shared models
 from shared.models import (
-    MetricDatapoint,
-    MetricStatistics,
-    MetricData,
-    MetricsCollectorOutput,
-    LogEntry,
-    LogsCollectorOutput,
     ChangeEvent,
     DeployContextCollectorOutput,
+    LogEntry,
+    LogsCollectorOutput,
+    MetricData,
+    MetricDatapoint,
+    MetricsCollectorOutput,
+    MetricStatistics,
 )
 
 # Import correlation engine functions directly

@@ -13,14 +13,15 @@ Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6
 """
 
 import json
-from datetime import datetime
-from unittest.mock import patch, MagicMock, Mock, call
-import pytest
-from botocore.exceptions import ClientError
-import requests
 
 # Import the lambda function
 import os
+from datetime import datetime
+from unittest.mock import MagicMock, Mock, call, patch
+
+import pytest
+import requests
+from botocore.exceptions import ClientError
 
 from notification_service import lambda_function
 

@@ -8,8 +8,9 @@ Requirements: 11.3 - Custom CloudWatch metrics for observability
 """
 
 import logging
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from typing import Dict, List, Optional
+
 import boto3
 from botocore.exceptions import ClientError
 

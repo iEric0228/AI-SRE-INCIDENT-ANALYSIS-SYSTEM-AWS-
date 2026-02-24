@@ -10,10 +10,12 @@ Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
 
 import json
 import logging
+import os
+import sys
 import traceback
-import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 import boto3
 from botocore.exceptions import ClientError
 
@@ -25,11 +27,8 @@ logger.setLevel(logging.INFO)
 logs_client = boto3.client("logs")
 
 # Import metrics utility
-import sys
-import os
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-from metrics import put_collector_success_metric
+from metrics import put_collector_success_metric  # noqa: E402
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

@@ -8,9 +8,11 @@ Validates Requirements 7.7, 16.5
 """
 
 import json
-import sys
 import os
-from hypothesis import given, strategies as st
+import sys
+
+from hypothesis import given
+from hypothesis import strategies as st
 from hypothesis.strategies import composite
 
 # Add src to path for imports
@@ -18,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Import LLM analyzer functions
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src", "llm_analyzer"))
-from lambda_function import extract_metadata, create_fallback_report
+from lambda_function import create_fallback_report, extract_metadata
 
 # Import shared models
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src", "shared"))

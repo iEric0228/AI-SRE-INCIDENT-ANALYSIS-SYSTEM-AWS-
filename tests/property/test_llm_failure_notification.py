@@ -8,18 +8,20 @@ Validates: Requirements 12.4
 """
 
 import json
-import pytest
-from hypothesis import given, strategies as st
-from datetime import datetime
-from typing import Dict, Any
+import os
 
 # Import notification service
 import sys
-import os
+from datetime import datetime
+from typing import Any, Dict
+
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from notification_service.lambda_function import format_slack_message, format_email_plain_text
+from notification_service.lambda_function import format_email_plain_text, format_slack_message
 
 
 # Strategy for generating fallback analysis reports (LLM failures)

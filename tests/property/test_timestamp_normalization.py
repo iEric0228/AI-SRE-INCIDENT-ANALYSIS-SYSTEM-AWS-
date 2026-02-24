@@ -7,15 +7,17 @@ to ISO 8601 UTC format across all data sources (metrics, logs, changes).
 Validates Requirement 6.2
 """
 
-from datetime import datetime, timezone, timedelta
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
 import os
 import re
+import sys
+from datetime import datetime, timedelta, timezone
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Import shared models
-from shared.models import StructuredContext, ResourceInfo, AlarmInfo, CompletenessInfo
+from shared.models import AlarmInfo, CompletenessInfo, ResourceInfo, StructuredContext
 
 # Import correlation engine functions directly
 # Clear any cached lambda_function module first

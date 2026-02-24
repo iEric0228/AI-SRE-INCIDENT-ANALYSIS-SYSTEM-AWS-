@@ -9,20 +9,22 @@ This module tests that collector outputs conform to the required schema:
 Validates Requirements 3.3
 """
 
-from datetime import datetime, timezone
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
-import os
 import json
+import os
+import sys
+from datetime import datetime, timezone
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from shared.models import (
-    MetricsCollectorOutput,
-    LogsCollectorOutput,
     DeployContextCollectorOutput,
+    LogsCollectorOutput,
+    MetricsCollectorOutput,
 )
 
 # Strategy generators for collector outputs

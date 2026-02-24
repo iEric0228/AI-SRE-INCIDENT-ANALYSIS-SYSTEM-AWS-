@@ -27,4 +27,4 @@ max-complexity = 10
 # Per-file ignores
 per-file-ignores =
     __init__.py:F401
-    tests/*:F401,F811
+    tests/*:F401,F811,E402,F841,F541,E712,E226,C901

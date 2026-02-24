@@ -6,8 +6,9 @@ Validates Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 17.4, 17.6
 
 import json
 import os
-import pytest
 import re
+
+import pytest
 
 
 def load_terraform_file(file_path):

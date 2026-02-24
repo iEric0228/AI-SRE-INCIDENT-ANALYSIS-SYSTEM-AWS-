@@ -6,11 +6,11 @@ including incident events, collector outputs, structured context, analysis repor
 and notification outputs.
 """
 
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
-from typing import List, Dict, Optional, Any
-from enum import Enum
 import json
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class AlarmState(Enum):

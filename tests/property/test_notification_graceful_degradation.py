@@ -8,13 +8,15 @@ Validates Requirement 8.6
 """
 
 import json
-import sys
 import os
+import sys
 from datetime import datetime
-from unittest.mock import patch, MagicMock, Mock
-from hypothesis import given, strategies as st, settings
-from hypothesis.strategies import composite
+from unittest.mock import MagicMock, Mock, patch
+
 import requests
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Import notification service using package-qualified import
 from notification_service import lambda_function
@@ -22,12 +24,12 @@ from notification_service.lambda_function import lambda_handler
 
 # Import shared models
 from shared.models import (
-    AnalysisReport,
     Analysis,
     AnalysisMetadata,
+    AnalysisReport,
     Confidence,
-    Status,
     DeliveryStatus,
+    Status,
 )
 
 # Strategy generators

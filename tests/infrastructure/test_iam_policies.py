@@ -9,8 +9,11 @@ Validates Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 def get_terraform_module_path():
@@ -320,6 +323,10 @@ class TestIAMRoleStructure:
 class TestTerraformConfiguration:
     """Test Terraform module configuration."""
 
+    @pytest.mark.skipif(
+        shutil.which("terraform") is None,
+        reason="Terraform CLI not installed",
+    )
     def test_terraform_validates_successfully(self):
         """Verify Terraform configuration is valid."""
         module_path = get_terraform_module_path()

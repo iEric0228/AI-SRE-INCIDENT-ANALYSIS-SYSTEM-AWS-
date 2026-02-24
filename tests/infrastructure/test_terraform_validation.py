@@ -10,6 +10,7 @@ Validates Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 17.1, 17.2, 17.3, 17.5
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List
@@ -605,6 +606,10 @@ class TestLambdaTimeoutConfiguration:
 class TestTerraformValidation:
     """Test Terraform configuration is valid and well-formed."""
 
+    @pytest.mark.skipif(
+        shutil.which("terraform") is None,
+        reason="Terraform CLI not installed",
+    )
     def test_terraform_fmt_check(self):
         """Test that Terraform files are properly formatted."""
         result = subprocess.run(

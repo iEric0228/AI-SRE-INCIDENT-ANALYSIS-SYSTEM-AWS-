@@ -13,7 +13,8 @@ Requirements: 7.1, 7.2, 7.4, 7.5, 7.7
 
 import json
 from datetime import datetime
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
 from botocore.exceptions import ClientError
 

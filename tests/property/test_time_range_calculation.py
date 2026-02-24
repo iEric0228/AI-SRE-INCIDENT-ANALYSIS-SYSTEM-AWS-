@@ -7,11 +7,13 @@ the metrics time range must be exactly -60 minutes to +5 minutes.
 Validates Requirements 3.1
 """
 
-from datetime import datetime, timedelta, timezone
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
 import os
+import sys
+from datetime import datetime, timedelta, timezone
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))

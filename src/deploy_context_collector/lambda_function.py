@@ -10,9 +10,12 @@ Requirements: 5.1, 5.2, 5.3, 5.4
 
 import json
 import logging
+import os
+import sys
 import traceback
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
 import boto3
 from botocore.exceptions import ClientError
 
@@ -25,11 +28,8 @@ cloudtrail = boto3.client("cloudtrail")
 ssm = boto3.client("ssm")
 
 # Import metrics utility
-import sys
-import os
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-from metrics import put_collector_success_metric
+from metrics import put_collector_success_metric  # noqa: E402
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -262,7 +262,7 @@ def calculate_time_range(incident_timestamp: datetime) -> Tuple[datetime, dateti
     return start_time, end_time
 
 
-def collect_cloudtrail_events(
+def collect_cloudtrail_events(  # noqa: C901
     resource_arn: str, start_time: datetime, end_time: datetime, correlation_id: str
 ) -> List[Dict[str, Any]]:
     """
@@ -465,7 +465,7 @@ def process_cloudtrail_event(event: Dict[str, Any], resource_arn: str) -> Option
             cloud_trail_event = json.loads(event.get("CloudTrailEvent", "{}"))
             user_identity = cloud_trail_event.get("userIdentity", {})
             user_arn = user_identity.get("arn", username)
-        except:
+        except Exception:
             pass
 
         # Generate description
@@ -475,7 +475,7 @@ def process_cloudtrail_event(event: Dict[str, Any], resource_arn: str) -> Option
         if isinstance(event_time, datetime):
             timestamp_str = event_time.isoformat().replace("+00:00", "Z")
         else:
-            timestamp_str = event_time
+            timestamp_str = str(event_time)
 
         return {
             "timestamp": timestamp_str,
@@ -610,7 +610,7 @@ def generate_change_description(event_name: str, event: Dict[str, Any], resource
         "CreateDeployment": f"Deployment created for {resource_name}",
         "UpdateService": f"ECS service {resource_name} updated",
         "ModifyDBInstance": f"RDS instance {resource_name} modified",
-        "PutParameter": f"Parameter Store parameter updated",
+        "PutParameter": "Parameter Store parameter updated",
         "UpdateStack": f"CloudFormation stack {resource_name} updated",
         "RunInstances": f"EC2 instance {resource_name} launched",
         "TerminateInstances": f"EC2 instance {resource_name} terminated",
@@ -622,7 +622,7 @@ def generate_change_description(event_name: str, event: Dict[str, Any], resource
     return descriptions.get(event_name, f"{event_name} on {resource_name}")
 
 
-def collect_parameter_store_changes(
+def collect_parameter_store_changes(  # noqa: C901
     resource_arn: str, start_time: datetime, end_time: datetime, correlation_id: str
 ) -> List[Dict[str, Any]]:
     """

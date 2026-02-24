@@ -8,12 +8,14 @@ concurrent incidents are processed independently without ID collisions.
 Validates Requirement 1.4
 """
 
-from datetime import datetime, timezone
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
 import os
+import sys
 import uuid
+from datetime import datetime, timezone
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))

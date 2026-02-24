@@ -7,14 +7,14 @@ requiring AWS credentials or Parameter Store access.
 Requirements: 16.1, 16.2, 16.3, 16.4, 16.5
 """
 
-import sys
-import os
 import json
+import os
+import sys
 
 # Add scripts directory to path to import the template
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../scripts"))
 
-from create_prompt_template import PROMPT_TEMPLATE, PROMPT_VERSION, PARAMETER_NAME
+from create_prompt_template import PARAMETER_NAME, PROMPT_TEMPLATE, PROMPT_VERSION
 
 
 class TestPromptTemplateStructure:

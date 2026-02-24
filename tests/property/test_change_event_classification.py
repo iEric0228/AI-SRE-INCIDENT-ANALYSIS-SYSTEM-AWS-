@@ -7,10 +7,12 @@ classification must be deployment, configuration, or infrastructure.
 Validates Requirements 5.2
 """
 
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
 import os
+import sys
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))

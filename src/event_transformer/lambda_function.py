@@ -12,7 +12,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import boto3
 from botocore.exceptions import ClientError
@@ -79,7 +79,7 @@ def extract_resource_arn(alarm_event: Dict[str, Any]) -> str:
         # Fallback to alarm ARN if resource ARN not found
         alarm_arn = detail.get("alarmArn", "")
         if alarm_arn:
-            return alarm_arn
+            return str(alarm_arn)
 
         # Last resort: construct generic ARN
         alarm_name = detail.get("alarmName", "unknown")
@@ -90,7 +90,7 @@ def extract_resource_arn(alarm_event: Dict[str, Any]) -> str:
     except Exception as e:
         logger.warning(f"Error extracting resource ARN: {e}")
         # Return alarm ARN as fallback
-        return alarm_event.get("detail", {}).get("alarmArn", "unknown")
+        return str(alarm_event.get("detail", {}).get("alarmArn", "unknown"))
 
 
 def transform_alarm_event(alarm_event: Dict[str, Any]) -> Dict[str, Any]:
@@ -240,7 +240,7 @@ def publish_to_sns(incident_event: Dict[str, Any]) -> str:
             }
         )
 
-        return message_id
+        return str(message_id)
 
     except ClientError as e:
         logger.error(

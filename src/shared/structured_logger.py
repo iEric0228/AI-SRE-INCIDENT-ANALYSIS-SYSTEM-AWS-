@@ -148,17 +148,17 @@ def get_correlation_id(event: Dict[str, Any]) -> str:
     """
     # Try direct incidentId field
     if "incidentId" in event:
-        return event["incidentId"]
+        return str(event["incidentId"])
 
     # Try nested in incident object
     if "incident" in event and isinstance(event["incident"], dict):
         if "incidentId" in event["incident"]:
-            return event["incident"]["incidentId"]
+            return str(event["incident"]["incidentId"])
 
     # Try in structuredContext
     if "structuredContext" in event and isinstance(event["structuredContext"], dict):
         if "incidentId" in event["structuredContext"]:
-            return event["structuredContext"]["incidentId"]
+            return str(event["structuredContext"]["incidentId"])
 
     # Default to unknown
     return "unknown"

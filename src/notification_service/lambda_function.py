@@ -8,25 +8,26 @@ Implements graceful degradation - continues with email if Slack fails.
 import json
 import logging
 import os
+
+# Add parent directory to path for shared modules
+import sys
 import time
 import traceback
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict
+
 import boto3
 import requests
 from botocore.exceptions import ClientError
 
-# Add parent directory to path for shared modules
-import sys
-
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from shared.models import (
+from shared.models import (  # noqa: E402
     AnalysisReport,
-    NotificationOutput,
-    NotificationDeliveryStatus,
-    Status,
     DeliveryStatus,
+    NotificationDeliveryStatus,
+    NotificationOutput,
+    Status,
 )
 
 # Configure logging
@@ -38,7 +39,7 @@ secrets_manager = boto3.client("secretsmanager")
 sns_client = boto3.client("sns")
 
 # Import metrics utility
-from shared.metrics import put_notification_delivery_metric
+from shared.metrics import put_notification_delivery_metric  # noqa: E402
 
 # Environment variables
 SLACK_SECRET_NAME = os.environ.get("SLACK_SECRET_NAME", "incident-analysis/slack-webhook")
@@ -281,7 +282,7 @@ def send_email_notification(analysis_report: AnalysisReport) -> None:
     # Format message
     subject = format_email_subject(analysis_report)
     plain_text = format_email_plain_text(analysis_report)
-    html_text = format_email_html(analysis_report)
+    format_email_html(analysis_report)  # HTML version prepared for future use
 
     # Publish to SNS
     try:
@@ -316,7 +317,7 @@ def get_slack_webhook_url() -> str:
     try:
         response = secrets_manager.get_secret_value(SecretId=SLACK_SECRET_NAME)
         secret = json.loads(response["SecretString"])
-        return secret["webhook_url"]
+        return str(secret["webhook_url"])
     except ClientError as e:
         raise Exception(f"Failed to retrieve Slack webhook URL: {e}")
     except (KeyError, json.JSONDecodeError) as e:
@@ -399,7 +400,7 @@ def format_slack_message(analysis_report: AnalysisReport) -> Dict[str, Any]:
     # Add recommended actions
     if analysis.recommended_actions:
         actions_text = "\n".join(
-            [f"{i+1}. {a}" for i, a in enumerate(analysis.recommended_actions)]
+            [f"{i + 1}. {a}" for i, a in enumerate(analysis.recommended_actions)]
         )
         blocks.append(
             {
@@ -560,7 +561,7 @@ def format_email_html(analysis_report: AnalysisReport) -> str:
                     <div>{confidence_value.capitalize()}</div>
                 </div>
             </div>
-            
+
             <div class="section">
                 <div class="section-title">Root Cause Hypothesis</div>
                 <p>{analysis.root_cause_hypothesis}</p>
@@ -608,7 +609,7 @@ def format_email_html(analysis_report: AnalysisReport) -> str:
 
     html += f"""
             <a href="{incident_link}" class="button">View Full Incident Details</a>
-            
+
             <div class="footer">
                 <p>This is an automated incident notification from the AI-Assisted SRE Incident Analysis System.</p>
             </div>

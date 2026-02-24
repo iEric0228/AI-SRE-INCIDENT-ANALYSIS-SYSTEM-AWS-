@@ -9,22 +9,24 @@ Validates Requirements 2.7, 11.1, 11.2
 
 import json
 import logging
-import sys
 import os
+import sys
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch, MagicMock
 from io import StringIO
-from hypothesis import given, strategies as st, assume
+from unittest.mock import MagicMock, Mock, patch
+
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from metrics_collector.lambda_function import lambda_handler as metrics_handler
-from logs_collector.lambda_function import lambda_handler as logs_handler
-from deploy_context_collector.lambda_function import lambda_handler as deploy_handler
 from correlation_engine.lambda_function import lambda_handler as correlation_handler
+from deploy_context_collector.lambda_function import lambda_handler as deploy_handler
 from llm_analyzer.lambda_function import lambda_handler as llm_handler
+from logs_collector.lambda_function import lambda_handler as logs_handler
+from metrics_collector.lambda_function import lambda_handler as metrics_handler
 from notification_service.lambda_function import lambda_handler as notification_handler
 
 # Strategy generators

@@ -8,9 +8,11 @@ Validates Requirements 7.4, 7.5
 """
 
 import json
-import sys
 import os
-from hypothesis import given, strategies as st, assume
+import sys
+
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from hypothesis.strategies import composite
 
 # Import LLM analyzer functions directly

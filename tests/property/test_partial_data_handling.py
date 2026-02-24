@@ -9,14 +9,16 @@ Validates: Requirements 2.5, 12.1, 12.2, 12.3, 12.6
 """
 
 import json
-import pytest
-from hypothesis import given, strategies as st, settings
-from datetime import datetime
-from typing import Dict, Any
+import os
 
 # Import the correlation engine
 import sys
-import os
+from datetime import datetime
+from typing import Any, Dict
+
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 

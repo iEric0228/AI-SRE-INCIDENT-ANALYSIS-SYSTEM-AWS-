@@ -8,8 +8,11 @@ Validates Requirements: 9.4
 """
 
 from datetime import datetime, timedelta
-from hypothesis import given, strategies as st
+
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
 from shared.models import IncidentRecord
 
 

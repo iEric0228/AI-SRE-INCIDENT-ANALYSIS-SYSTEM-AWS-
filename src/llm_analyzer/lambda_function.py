@@ -17,12 +17,12 @@ The function implements:
 
 import json
 import logging
-import traceback
-import time
 import os
-from typing import Dict, Any, Optional
+import time
+import traceback
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict
 
 import boto3
 from botocore.exceptions import ClientError
@@ -59,7 +59,7 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.timeout_seconds = timeout_seconds
         self.failure_count = 0
-        self.last_failure_time = None
+        self.last_failure_time: float | None = None
         self.state = CircuitState.CLOSED
 
     def call(self, func, *args, **kwargs):
@@ -103,7 +103,7 @@ class CircuitBreaker:
             # Success - reset failure count and close circuit
             self.on_success()
             return result
-        except Exception as e:
+        except Exception:
             # Failure - increment counter and potentially open circuit
             self.on_failure()
             # Re-raise exception for caller to handle
@@ -130,10 +130,10 @@ class CircuitBreaker:
 bedrock_circuit_breaker = CircuitBreaker(failure_threshold=5, timeout_seconds=60)
 
 # Import metrics utility
-import sys
+import sys  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-from metrics import put_llm_invocation_metric
+from metrics import put_llm_invocation_metric  # noqa: E402
 
 
 def get_bedrock_client():
@@ -409,7 +409,7 @@ def parse_llm_response(response_text: str) -> Dict[str, Any]:
                     str(item) for item in analysis["recommendedActions"] if item is not None
                 ]
 
-                return analysis
+                return dict(analysis)
 
         # Level 2: If JSON parsing failed, create structured response from text
         # This handles cases where LLM provides analysis in natural language

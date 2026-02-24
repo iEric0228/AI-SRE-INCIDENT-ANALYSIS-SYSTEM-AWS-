@@ -5,8 +5,9 @@ Tests verify that variable validation rules work correctly and that
 default values meet requirements.
 """
 
-import pytest
 import re
+
+import pytest
 
 
 class TestCoreVariables:

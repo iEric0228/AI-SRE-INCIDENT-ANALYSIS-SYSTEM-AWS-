@@ -8,14 +8,16 @@ Validates Requirements 8.1, 8.4, 8.5
 """
 
 import json
-import sys
 import os
+import sys
 from datetime import datetime
-from hypothesis import given, strategies as st
+
+from hypothesis import given
+from hypothesis import strategies as st
 from hypothesis.strategies import composite
 
 # Import shared models
-from shared.models import AnalysisReport, Analysis, AnalysisMetadata, Confidence
+from shared.models import Analysis, AnalysisMetadata, AnalysisReport, Confidence
 
 # Import notification service functions directly
 # Clear any cached lambda_function module first

@@ -50,6 +50,14 @@ ignore_missing_imports = true
 module = "hypothesis.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["metrics", "models"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "requests.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 # Additional pytest configuration (extends pytest.ini)
 asyncio_mode = "auto"

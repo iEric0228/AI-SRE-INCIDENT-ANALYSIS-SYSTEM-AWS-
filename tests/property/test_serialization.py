@@ -7,35 +7,37 @@ serializing to dict then deserializing must produce an equivalent object.
 Validates Requirements 6.1, 9.2
 """
 
-from datetime import datetime, timezone
-from hypothesis import given, strategies as st
-from hypothesis.strategies import composite
-import sys
 import os
+import sys
+from datetime import datetime, timezone
+
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from shared.models import (
+    AlarmInfo,
+    Analysis,
+    AnalysisMetadata,
+    AnalysisReport,
+    ChangeEvent,
+    CompletenessInfo,
+    DeployContextCollectorOutput,
     IncidentEvent,
-    MetricDatapoint,
-    MetricStatistics,
-    MetricData,
-    MetricsCollectorOutput,
+    IncidentRecord,
     LogEntry,
     LogsCollectorOutput,
-    ChangeEvent,
-    DeployContextCollectorOutput,
-    ResourceInfo,
-    AlarmInfo,
-    CompletenessInfo,
-    StructuredContext,
-    AnalysisMetadata,
-    Analysis,
-    AnalysisReport,
+    MetricData,
+    MetricDatapoint,
+    MetricsCollectorOutput,
+    MetricStatistics,
     NotificationDeliveryStatus,
     NotificationOutput,
-    IncidentRecord,
+    ResourceInfo,
+    StructuredContext,
 )
 
 # Strategy generators for data models

@@ -10,10 +10,12 @@ Requirements: 3.1, 3.2, 3.3, 3.4
 
 import json
 import logging
-import traceback
 import os
+import sys
+import traceback
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 import boto3
 from botocore.exceptions import ClientError
 
@@ -25,10 +27,8 @@ logger.setLevel(logging.INFO)
 cloudwatch = boto3.client("cloudwatch")
 
 # Import metrics utility
-import sys
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-from metrics import put_collector_success_metric
+from metrics import put_collector_success_metric  # noqa: E402
 
 
 def _log(level: str, message: str, correlation_id: str, context: Any = None, **kwargs) -> None:
@@ -66,7 +66,7 @@ def _log(level: str, message: str, correlation_id: str, context: Any = None, **k
     log_method(json.dumps(log_entry))
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # noqa: C901
     """
     Lambda handler for metrics collection.
 

@@ -14,15 +14,17 @@ This test validates the design principle that storage is independent of notifica
 """
 
 import json
-import pytest
-from hypothesis import given, strategies as st
-from datetime import datetime
-from typing import Dict, Any
-from unittest.mock import Mock, patch, MagicMock
+import os
 
 # Import shared models
 import sys
-import os
+from datetime import datetime
+from typing import Any, Dict
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 

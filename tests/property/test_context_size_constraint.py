@@ -7,19 +7,21 @@ on structured context by truncating data when necessary.
 Validates Requirement 6.6
 """
 
-from datetime import datetime, timezone
-from hypothesis import given, strategies as st, assume, settings, HealthCheck
-from hypothesis.strategies import composite
-import sys
-import os
 import json
+import os
+import sys
+from datetime import datetime, timezone
+
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
+from hypothesis.strategies import composite
 
 # Import shared models
 from shared.models import (
-    StructuredContext,
-    ResourceInfo,
     AlarmInfo,
     CompletenessInfo,
+    ResourceInfo,
+    StructuredContext,
 )
 
 # Import correlation engine functions directly

@@ -17,26 +17,23 @@ Requirements: 6.1, 6.2, 6.3, 6.4, 6.6
 
 import json
 import logging
+import os
+import sys
 import traceback
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
-import sys
-import os
+from typing import Any, Dict
 
 # Add shared module to path
 sys.path.insert(0, "/opt/python")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
 
-from models import (
-    StructuredContext,
-    ResourceInfo,
+from metrics import put_workflow_duration_metric  # noqa: E402
+from models import (  # noqa: E402
     AlarmInfo,
     CompletenessInfo,
-    MetricsCollectorOutput,
-    LogsCollectorOutput,
-    DeployContextCollectorOutput,
+    ResourceInfo,
+    StructuredContext,
 )
-from metrics import put_workflow_duration_metric
 
 # Configure structured logging
 logger = logging.getLogger()
@@ -254,8 +251,8 @@ def extract_logs_data(event: Dict[str, Any]) -> Dict[str, Any]:
     logs_list = logs_output.get("logs", [])
 
     # Count errors by level
-    error_counts = {}
-    top_errors = []
+    error_counts: Dict[str, int] = {}
+    top_errors: list[Dict[str, Any]] = []
 
     for log in logs_list:
         level = log.get("logLevel", "UNKNOWN")
@@ -290,7 +287,7 @@ def extract_changes_data(event: Dict[str, Any]) -> Dict[str, Any]:
     changes_list = changes_output.get("changes", [])
 
     # Count changes by type
-    change_counts = {}
+    change_counts: Dict[str, int] = {}
     recent_deployments = 0
     last_deployment_time = None
 
@@ -391,7 +388,7 @@ def parse_timestamp(timestamp_str: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
-def normalize_timestamps(context: StructuredContext) -> StructuredContext:
+def normalize_timestamps(context: StructuredContext) -> StructuredContext:  # noqa: C901
     """
     Normalize all timestamps to ISO 8601 UTC format.
 
@@ -536,7 +533,9 @@ def calculate_summary_statistics(context: StructuredContext) -> StructuredContex
     return context
 
 
-def enforce_size_constraint(context: StructuredContext, max_size_kb: int = 50) -> StructuredContext:
+def enforce_size_constraint(  # noqa: C901
+    context: StructuredContext, max_size_kb: int = 50
+) -> StructuredContext:
     """
     Enforce size constraint by truncating data if necessary.
     Prioritizes recent entries when truncating.

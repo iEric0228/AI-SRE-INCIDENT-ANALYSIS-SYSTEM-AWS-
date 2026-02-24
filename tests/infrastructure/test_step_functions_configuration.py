@@ -5,6 +5,8 @@ Validates Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 17.1, 20.1, 20.2
 """
 
 import json
+import shutil
+
 import pytest
 
 
@@ -474,6 +476,10 @@ def test_terraform_module_structure():
     assert os.path.exists(f"{module_path}/README.md")
 
 
+@pytest.mark.skipif(
+    shutil.which("terraform") is None,
+    reason="Terraform CLI not installed",
+)
 def test_terraform_validation():
     """
     Test that Terraform configuration is valid.

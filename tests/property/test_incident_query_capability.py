@@ -11,10 +11,13 @@ The table is shared across all hypothesis examples within a single test run.
 """
 
 from datetime import datetime, timedelta
-from hypothesis import given, strategies as st, settings, HealthCheck
-import pytest
-from moto import mock_aws
+
 import boto3
+import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+from moto import mock_aws
+
 from shared.models import IncidentRecord
 
 

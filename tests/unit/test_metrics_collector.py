@@ -12,7 +12,8 @@ Requirements: 3.1, 3.2, 3.3, 3.4
 
 import json
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 from botocore.exceptions import ClientError
 

@@ -20,9 +20,11 @@ Non-retryable errors:
 """
 
 import json
+from typing import Any, Dict, List
+
 import pytest
-from hypothesis import given, strategies as st
-from typing import Dict, Any, List
+from hypothesis import given
+from hypothesis import strategies as st
 
 # Define error categories
 RETRYABLE_ERRORS = [

@@ -13,7 +13,8 @@ Requirements: 5.1, 5.2, 5.3, 5.4
 
 import json
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 from botocore.exceptions import ClientError
 

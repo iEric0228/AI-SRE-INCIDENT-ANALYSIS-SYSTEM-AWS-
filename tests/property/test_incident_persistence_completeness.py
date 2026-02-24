@@ -9,19 +9,22 @@ Validates Requirements: 9.1, 9.2
 
 import json
 from datetime import datetime, timedelta
-from hypothesis import given, strategies as st
+
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
 from shared.models import (
-    IncidentRecord,
-    StructuredContext,
-    AnalysisReport,
-    NotificationOutput,
-    ResourceInfo,
     AlarmInfo,
-    CompletenessInfo,
     Analysis,
     AnalysisMetadata,
+    AnalysisReport,
+    CompletenessInfo,
     DeliveryStatus,
+    IncidentRecord,
+    NotificationOutput,
+    ResourceInfo,
+    StructuredContext,
 )
 
 

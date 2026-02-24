@@ -6,8 +6,9 @@ with appropriate thresholds, SNS topics, and monitoring coverage.
 """
 
 import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
