@@ -20,6 +20,12 @@ variable "alarm_notification_topic_arn" {
   type        = string
 }
 
+variable "email_endpoints" {
+  description = "List of email addresses to subscribe to the incident notification SNS topic"
+  type        = list(string)
+  default     = []
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

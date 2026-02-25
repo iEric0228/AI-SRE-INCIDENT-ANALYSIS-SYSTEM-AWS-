@@ -244,7 +244,7 @@ class TestLambdaEnvironmentVariables:
 
         notification_section = self._extract_function_section(main_tf, "notification_service")
         assert "SLACK_SECRET_NAME" in notification_section
-        assert "EMAIL_TOPIC_ARN" in notification_section
+        assert "SNS_TOPIC_ARN" in notification_section
         assert "INCIDENT_STORE_URL" in notification_section
 
     def test_correlation_engine_has_size_constraint(self):

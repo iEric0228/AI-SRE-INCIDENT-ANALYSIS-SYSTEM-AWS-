@@ -188,9 +188,8 @@ resource "aws_lambda_function" "notification_service" {
       DYNAMODB_TABLE     = var.dynamodb_table_name
       LOG_LEVEL          = var.log_level
       SLACK_SECRET_NAME  = "${var.project_name}/slack-webhook"
-      EMAIL_TOPIC_ARN    = var.sns_topic_arn
+      SNS_TOPIC_ARN      = var.sns_topic_arn
       INCIDENT_STORE_URL = "https://console.aws.amazon.com/dynamodbv2/home?region=${var.aws_region}#item-explorer?table=${var.dynamodb_table_name}"
-      INCIDENT_TOPIC_ARN = var.sns_topic_arn
     }
   }
 

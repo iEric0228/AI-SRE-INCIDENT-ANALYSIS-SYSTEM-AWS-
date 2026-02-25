@@ -371,6 +371,14 @@ def test_log_result_limiting_boundary_at_100(log_events):
     timestamp_100th = sorted_logs[99].get("timestamp")  # Index 99 = 100th entry
     timestamp_101st = sorted_logs[100].get("timestamp")  # Index 100 = 101st entry
 
+    # Skip cases where boundary entries share a timestamp (due to random offsets
+    # in the strategy). The boundary exclusion property is only meaningful when
+    # the 100th and 101st entries have distinct timestamps.
+    assume(timestamp_100th != timestamp_101st)
+    # Also skip if the 101st timestamp appears anywhere in the first 100 entries
+    first_100_timestamps = {e.get("timestamp") for e in sorted_logs[:100]}
+    assume(timestamp_101st not in first_100_timestamps)
+
     # Simulate the limiting logic
     limited_logs = sorted_logs[:100]
 

@@ -90,6 +90,14 @@ resource "aws_sns_topic_subscription" "dlq" {
   })
 }
 
+# SNS Email Subscriptions for Incident Notifications
+resource "aws_sns_topic_subscription" "email" {
+  count     = length(var.email_endpoints)
+  topic_arn = aws_sns_topic.incident_notifications.arn
+  protocol  = "email"
+  endpoint  = var.email_endpoints[count.index]
+}
+
 # EventBridge Rule for CloudWatch Alarm State Changes
 resource "aws_cloudwatch_event_rule" "alarm_state_change" {
   name        = "${var.project_name}-alarm-state-change"

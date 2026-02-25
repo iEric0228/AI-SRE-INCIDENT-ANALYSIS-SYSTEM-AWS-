@@ -18,7 +18,7 @@ terraform {
   # S3 backend for remote state storage
   # Supports multiple environments via workspaces
   backend "s3" {
-    bucket         = "ai-sre-incident-analysis-terraform-state"
+    bucket         = "ericchiu-terraform-state"
     key            = "incident-analysis/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
@@ -138,6 +138,7 @@ module "eventbridge" {
   event_transformer_lambda_arn = "arn:aws:lambda:${local.region}:${local.account_id}:function:${var.project_name}-event-transformer"
   kms_key_id                   = module.secrets.kms_key_id
   alarm_notification_topic_arn = "" # Will be populated by cloudwatch_alarms module
+  email_endpoints              = var.email_notification_endpoints
 
   tags = local.common_tags
 
