@@ -61,55 +61,101 @@ jobs:
       # ================================================================
       - name: Package Lambda Functions
         run: |
+          set -euo pipefail
           echo "=== Packaging Lambda functions ==="
-          for func in metrics_collector logs_collector deploy_context_collector \
-                      correlation_engine llm_analyzer notification_service; do
-            echo ""
-            echo "--- ${func} ---"
-            FUNC_DIR="src/${func}"
-            BUILD_DIR="${FUNC_DIR}/build"
+          echo "Working directory: $(pwd)"
+          echo "GITHUB_WORKSPACE: ${GITHUB_WORKSPACE}"
+          echo ""
 
-            rm -rf "${BUILD_DIR}" "${FUNC_DIR}/deployment.zip"
+          FUNCTIONS="metrics_collector logs_collector deploy_context_collector correlation_engine llm_analyzer notification_service"
+
+          for func in $FUNCTIONS; do
+            echo "--- Packaging ${func} ---"
+            FUNC_DIR="${GITHUB_WORKSPACE}/src/${func}"
+            BUILD_DIR="/tmp/lambda-build/${func}"
+
+            # Verify source exists
+            if [ ! -f "${FUNC_DIR}/lambda_function.py" ]; then
+              echo "ERROR: ${FUNC_DIR}/lambda_function.py not found!"
+              ls -la "${FUNC_DIR}/" 2>/dev/null || echo "Directory does not exist!"
+              exit 1
+            fi
+
+            # Clean and create build directory
+            rm -rf "${BUILD_DIR}"
             mkdir -p "${BUILD_DIR}"
 
             # Copy function code and shared modules
             cp "${FUNC_DIR}/lambda_function.py" "${BUILD_DIR}/"
-            cp -r src/shared "${BUILD_DIR}/shared"
+            cp -r "${GITHUB_WORKSPACE}/src/shared" "${BUILD_DIR}/shared"
 
             # Install requests for notification_service only
             if [ "${func}" = "notification_service" ]; then
               echo "  Installing requests..."
-              pip install requests -t "${BUILD_DIR}" --quiet
+              pip install requests -t "${BUILD_DIR}" --quiet --no-cache-dir
             fi
 
-            # Clean up bytecode
+            # Clean up bytecode and dist-info
             find "${BUILD_DIR}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
             find "${BUILD_DIR}" -name "*.pyc" -delete 2>/dev/null || true
             find "${BUILD_DIR}" -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
 
-            # Create zip
-            (cd "${BUILD_DIR}" && zip -r9q "../deployment.zip" .)
+            # Remove any old zip
+            rm -f "${FUNC_DIR}/deployment.zip"
+
+            # Create zip using absolute paths
+            (cd "${BUILD_DIR}" && zip -r9 "${FUNC_DIR}/deployment.zip" .)
+
+            # Clean up build directory
             rm -rf "${BUILD_DIR}"
 
-            # Verify
-            if [ -f "${FUNC_DIR}/deployment.zip" ]; then
-              SIZE=$(du -h "${FUNC_DIR}/deployment.zip" | cut -f1)
-              echo "  OK: deployment.zip (${SIZE})"
+            # Verify the zip was created and is valid
+            if [ ! -f "${FUNC_DIR}/deployment.zip" ]; then
+              echo "  ERROR: deployment.zip was NOT created at ${FUNC_DIR}!"
+              exit 1
+            fi
+
+            SIZE=$(stat --format="%s" "${FUNC_DIR}/deployment.zip")
+            if [ "${SIZE}" -lt 100 ]; then
+              echo "  ERROR: deployment.zip is suspiciously small (${SIZE} bytes)!"
+              exit 1
+            fi
+
+            echo "  Created: deployment.zip (${SIZE} bytes)"
+            echo "  Contents (top-level):"
+            zipinfo -1 "${FUNC_DIR}/deployment.zip" | grep -v '/' | head -10 || true
+            echo "  Shared modules:"
+            zipinfo -1 "${FUNC_DIR}/deployment.zip" | grep '^shared/' | head -10 || true
+            echo ""
+          done
+
+          echo "=== All Lambda packages created ==="
+
+      - name: Verify Packages From Terraform Directory
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          echo "Verifying Lambda packages are accessible from Terraform working directory..."
+          echo "CWD: $(pwd)"
+          echo ""
+
+          FUNCTIONS="metrics_collector logs_collector deploy_context_collector correlation_engine llm_analyzer notification_service"
+
+          for func in $FUNCTIONS; do
+            EXPECTED_PATH="../src/${func}/deployment.zip"
+            if [ -f "${EXPECTED_PATH}" ]; then
+              SIZE=$(stat --format="%s" "${EXPECTED_PATH}")
+              REAL=$(realpath "${EXPECTED_PATH}")
+              echo "  OK: ${func} -> ${REAL} (${SIZE} bytes)"
             else
-              echo "  ERROR: Failed to create deployment.zip!"
+              echo "  FAIL: ${EXPECTED_PATH} NOT FOUND from $(pwd)"
+              echo "  Checking absolute path..."
+              ls -la "${GITHUB_WORKSPACE}/src/${func}/" || echo "  Directory not found!"
               exit 1
             fi
           done
           echo ""
-          echo "=== All Lambda packages created ==="
-
-      - name: Verify Lambda Packages Exist
-        run: |
-          echo "Final verification of all deployment packages:"
-          for func in metrics_collector logs_collector deploy_context_collector \
-                      correlation_engine llm_analyzer notification_service; do
-            ls -lh "src/${func}/deployment.zip"
-          done
+          echo "All packages accessible from terraform directory."
 
       # ================================================================
       # DEPLOY EPHEMERAL INFRASTRUCTURE
@@ -124,13 +170,59 @@ jobs:
         id: tf-apply
         working-directory: terraform
         run: |
+          set +e
+
+          echo "=== Terraform Apply Attempt 1 ==="
           terraform apply -auto-approve \
             -var="environment=dev" \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="project_name=${{ env.EPHEMERAL_PREFIX }}" \
             -var="dynamodb_table_name=${{ env.EPHEMERAL_PREFIX }}-store" \
             -var='email_notification_endpoints=["${{ secrets.NOTIFICATION_EMAIL }}"]' \
-            -var="create_cloudwatch_alarms=false"
+            -var="create_cloudwatch_alarms=false" \
+            2>&1 | tee /tmp/tf-apply-1.log
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "Terraform apply succeeded on first attempt."
+            exit 0
+          fi
+
+          echo ""
+          echo "=== First attempt failed (exit code: ${EXIT_CODE}) ==="
+          echo "Checking if this is an IAM propagation issue..."
+
+          if grep -qi "InvalidParameterValueException\|cannot be assumed\|role.*cannot\|not authorized" /tmp/tf-apply-1.log; then
+            echo "Detected possible IAM propagation delay. Waiting 30 seconds before retry..."
+            sleep 30
+
+            echo ""
+            echo "=== Terraform Apply Attempt 2 ==="
+            terraform apply -auto-approve \
+              -var="environment=dev" \
+              -var="aws_region=${{ env.AWS_REGION }}" \
+              -var="project_name=${{ env.EPHEMERAL_PREFIX }}" \
+              -var="dynamodb_table_name=${{ env.EPHEMERAL_PREFIX }}-store" \
+              -var='email_notification_endpoints=["${{ secrets.NOTIFICATION_EMAIL }}"]' \
+              -var="create_cloudwatch_alarms=false" \
+              2>&1 | tee /tmp/tf-apply-2.log
+            EXIT_CODE=${PIPESTATUS[0]}
+
+            if [ $EXIT_CODE -eq 0 ]; then
+              echo "Terraform apply succeeded on second attempt."
+              exit 0
+            fi
+
+            echo ""
+            echo "=== Second attempt also failed ==="
+            echo "Full error output:"
+            cat /tmp/tf-apply-2.log
+            exit 1
+          else
+            echo "Not an IAM issue. Full error output:"
+            cat /tmp/tf-apply-1.log
+            exit 1
+          fi
 
       - name: Capture Terraform Outputs
         id: tf-outputs
