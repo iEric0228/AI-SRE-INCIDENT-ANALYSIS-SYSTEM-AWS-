@@ -62,7 +62,7 @@ jobs:
       - name: Package Lambda Functions
         run: |
           chmod +x scripts/package-lambdas.sh
-          scripts/package-lambdas.sh
+          bash scripts/package-lambdas.sh
 
       - name: Verify Lambda Packages
         run: |
@@ -70,18 +70,26 @@ jobs:
           ALL_OK=true
           for func in metrics_collector logs_collector deploy_context_collector \
                       correlation_engine llm_analyzer notification_service; do
-            if [ ! -f "src/${func}/deployment.zip" ]; then
-              echo "FAIL: Missing deployment.zip for ${func}"
+            ZIP_PATH="src/${func}/deployment.zip"
+            if [ ! -f "$ZIP_PATH" ]; then
+              echo "FAIL: Missing ${ZIP_PATH}"
+              echo "  Contents of src/${func}/:"
+              ls -la "src/${func}/" 2>/dev/null || echo "  Directory not found!"
               ALL_OK=false
             else
-              SIZE=$(du -h "src/${func}/deployment.zip" | cut -f1)
-              echo "OK: src/${func}/deployment.zip (${SIZE})"
+              SIZE=$(du -h "$ZIP_PATH" | cut -f1)
+              FILES=$(zipinfo -1 "$ZIP_PATH" 2>/dev/null | wc -l | tr -d ' ')
+              echo "OK: ${ZIP_PATH} (${SIZE}, ${FILES} files)"
+              echo "  Contains: $(zipinfo -1 "$ZIP_PATH" 2>/dev/null | head -5 | tr '\n' ', ')"
             fi
           done
           if [ "$ALL_OK" = false ]; then
+            echo ""
             echo "ERROR: Some Lambda packages are missing!"
             exit 1
           fi
+          echo ""
+          echo "All Lambda packages verified successfully."
 
       # ================================================================
       # DEPLOY EPHEMERAL INFRASTRUCTURE
