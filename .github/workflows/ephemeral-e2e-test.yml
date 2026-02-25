@@ -9,7 +9,7 @@ permissions:
 
 env:
   PYTHON_VERSION: '3.11'
-  TERRAFORM_VERSION: '1.6.0'
+  TERRAFORM_VERSION: '1.9.8'
   AWS_REGION: us-east-1
   EPHEMERAL_PREFIX: "e2e-test-${{ github.run_id }}"
 
@@ -122,9 +122,9 @@ jobs:
             fi
 
             echo "  Created: deployment.zip (${SIZE} bytes)"
-            echo "  Contents (top-level):"
-            zipinfo -1 "${FUNC_DIR}/deployment.zip" | grep -v '/' | head -10 || true
-            echo "  Shared modules:"
+            echo "  Top-level files:"
+            zipinfo -1 "${FUNC_DIR}/deployment.zip" | grep -v '/' || true
+            echo "  Shared module files:"
             zipinfo -1 "${FUNC_DIR}/deployment.zip" | grep '^shared/' | head -10 || true
             echo ""
           done
@@ -135,44 +135,165 @@ jobs:
         working-directory: terraform
         run: |
           set -euo pipefail
-          echo "Verifying Lambda packages are accessible from Terraform working directory..."
-          echo "CWD: $(pwd)"
+          echo "Verifying from terraform working directory ($(pwd))..."
           echo ""
 
           FUNCTIONS="metrics_collector logs_collector deploy_context_collector correlation_engine llm_analyzer notification_service"
 
           for func in $FUNCTIONS; do
-            EXPECTED_PATH="../src/${func}/deployment.zip"
-            if [ -f "${EXPECTED_PATH}" ]; then
-              SIZE=$(stat --format="%s" "${EXPECTED_PATH}")
-              REAL=$(realpath "${EXPECTED_PATH}")
+            ZIP_PATH="../src/${func}/deployment.zip"
+            if [ -f "${ZIP_PATH}" ]; then
+              SIZE=$(stat --format="%s" "${ZIP_PATH}")
+              REAL=$(realpath "${ZIP_PATH}")
               echo "  OK: ${func} -> ${REAL} (${SIZE} bytes)"
             else
-              echo "  FAIL: ${EXPECTED_PATH} NOT FOUND from $(pwd)"
-              echo "  Checking absolute path..."
-              ls -la "${GITHUB_WORKSPACE}/src/${func}/" || echo "  Directory not found!"
+              echo "  FAIL: ${ZIP_PATH} NOT FOUND"
               exit 1
             fi
           done
           echo ""
-          echo "All packages accessible from terraform directory."
+          echo "All packages verified."
 
       # ================================================================
-      # DEPLOY EPHEMERAL INFRASTRUCTURE
+      # DEPLOY - PHASE 1: Infrastructure (IAM, DynamoDB, EventBridge)
       # ================================================================
-      - name: Terraform Init (Ephemeral)
+      - name: Terraform Init
         working-directory: terraform
         run: |
           terraform init -reconfigure \
             -backend-config="key=ephemeral-tests/run-${{ github.run_id }}/terraform.tfstate"
 
-      - name: Terraform Apply (Ephemeral)
-        id: tf-apply
+      - name: "Deploy Phase 1: IAM & Infrastructure"
         working-directory: terraform
         run: |
-          set +e
+          echo "=== Phase 1: Creating IAM roles, DynamoDB, EventBridge, Secrets ==="
+          terraform apply -auto-approve \
+            -target=module.secrets \
+            -target=module.iam \
+            -target=module.dynamodb \
+            -target=module.eventbridge \
+            -var="environment=dev" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="project_name=${{ env.EPHEMERAL_PREFIX }}" \
+            -var="dynamodb_table_name=${{ env.EPHEMERAL_PREFIX }}-store" \
+            -var='email_notification_endpoints=["${{ secrets.NOTIFICATION_EMAIL }}"]' \
+            -var="create_cloudwatch_alarms=false"
+          echo "Phase 1 complete."
 
-          echo "=== Terraform Apply Attempt 1 ==="
+      - name: Verify IAM Roles Exist
+        run: |
+          echo "=== Verifying IAM roles are created and assumable ==="
+          for role_suffix in metrics-collector logs-collector deploy-context-collector \
+                            correlation-engine llm-analyzer notification-service; do
+            ROLE_NAME="${{ env.EPHEMERAL_PREFIX }}-${role_suffix}-role"
+            ROLE_ARN=$(aws iam get-role --role-name "${ROLE_NAME}" \
+              --query 'Role.Arn' --output text 2>&1) || true
+
+            if [[ "${ROLE_ARN}" == arn:aws:iam* ]]; then
+              echo "  OK: ${ROLE_NAME} -> ${ROLE_ARN}"
+            else
+              echo "  FAIL: ${ROLE_NAME} not found!"
+              echo "  Error: ${ROLE_ARN}"
+              exit 1
+            fi
+          done
+          echo ""
+          echo "All IAM roles verified."
+
+      - name: Test Lambda Creation via AWS CLI
+        id: cli-test
+        run: |
+          echo "=== Testing Lambda creation directly via AWS CLI ==="
+          echo "This bypasses Terraform to identify the exact AWS error."
+          echo ""
+
+          ROLE_ARN=$(aws iam get-role \
+            --role-name "${{ env.EPHEMERAL_PREFIX }}-metrics-collector-role" \
+            --query 'Role.Arn' --output text)
+
+          ZIP_PATH="${GITHUB_WORKSPACE}/src/metrics_collector/deployment.zip"
+          TEST_FUNC_NAME="e2e-cli-test-${{ github.run_id }}"
+
+          echo "Role ARN: ${ROLE_ARN}"
+          echo "Zip path: ${ZIP_PATH}"
+          echo "Zip size: $(stat --format='%s' "${ZIP_PATH}") bytes"
+          echo "Function: ${TEST_FUNC_NAME}"
+          echo ""
+
+          # Try creating a Lambda function directly
+          RESULT=$(aws lambda create-function \
+            --function-name "${TEST_FUNC_NAME}" \
+            --runtime python3.11 \
+            --architectures arm64 \
+            --handler lambda_function.lambda_handler \
+            --role "${ROLE_ARN}" \
+            --zip-file "fileb://${ZIP_PATH}" \
+            --timeout 10 \
+            --memory-size 128 \
+            2>&1) || true
+
+          echo "AWS CLI Result:"
+          echo "${RESULT}"
+          echo ""
+
+          if echo "${RESULT}" | grep -q "FunctionArn"; then
+            echo "SUCCESS: Lambda created via AWS CLI!"
+            echo "cli_test=passed" >> "$GITHUB_OUTPUT"
+
+            # Clean up test function
+            aws lambda delete-function --function-name "${TEST_FUNC_NAME}" 2>/dev/null || true
+          else
+            echo "FAILED: Lambda creation via AWS CLI also failed."
+            echo "cli_test=failed" >> "$GITHUB_OUTPUT"
+            echo ""
+            echo "This means the issue is NOT Terraform-specific."
+            echo "The AWS error above shows the exact reason."
+
+            # Check if it's a role assumption issue - wait and retry
+            if echo "${RESULT}" | grep -qi "role.*cannot be assumed\|InvalidParameterValueException"; then
+              echo ""
+              echo "Possible IAM propagation delay. Waiting 15 seconds and retrying..."
+              sleep 15
+
+              RESULT2=$(aws lambda create-function \
+                --function-name "${TEST_FUNC_NAME}" \
+                --runtime python3.11 \
+                --architectures arm64 \
+                --handler lambda_function.lambda_handler \
+                --role "${ROLE_ARN}" \
+                --zip-file "fileb://${ZIP_PATH}" \
+                --timeout 10 \
+                --memory-size 128 \
+                2>&1) || true
+
+              echo "Retry Result:"
+              echo "${RESULT2}"
+
+              if echo "${RESULT2}" | grep -q "FunctionArn"; then
+                echo "SUCCESS on retry! IAM propagation was the issue."
+                echo "cli_test=passed_retry" >> "$GITHUB_OUTPUT"
+                aws lambda delete-function --function-name "${TEST_FUNC_NAME}" 2>/dev/null || true
+              fi
+            fi
+          fi
+
+      - name: Wait for IAM Propagation
+        run: |
+          echo "Waiting 15 seconds for IAM role propagation..."
+          sleep 15
+          echo "Done."
+
+      # ================================================================
+      # DEPLOY - PHASE 2: Lambda & Step Functions
+      # ================================================================
+      - name: "Deploy Phase 2: Lambda & Step Functions"
+        id: tf-apply
+        working-directory: terraform
+        env:
+          TF_LOG: WARN
+          TF_LOG_PATH: /tmp/terraform-debug.log
+        run: |
+          echo "=== Phase 2: Creating Lambda functions & Step Functions ==="
           terraform apply -auto-approve \
             -var="environment=dev" \
             -var="aws_region=${{ env.AWS_REGION }}" \
@@ -180,49 +301,26 @@ jobs:
             -var="dynamodb_table_name=${{ env.EPHEMERAL_PREFIX }}-store" \
             -var='email_notification_endpoints=["${{ secrets.NOTIFICATION_EMAIL }}"]' \
             -var="create_cloudwatch_alarms=false" \
-            2>&1 | tee /tmp/tf-apply-1.log
-          EXIT_CODE=${PIPESTATUS[0]}
+            2>&1 | tee /tmp/tf-apply.log
+          TF_EXIT=${PIPESTATUS[0]}
 
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "Terraform apply succeeded on first attempt."
-            exit 0
-          fi
-
-          echo ""
-          echo "=== First attempt failed (exit code: ${EXIT_CODE}) ==="
-          echo "Checking if this is an IAM propagation issue..."
-
-          if grep -qi "InvalidParameterValueException\|cannot be assumed\|role.*cannot\|not authorized" /tmp/tf-apply-1.log; then
-            echo "Detected possible IAM propagation delay. Waiting 30 seconds before retry..."
-            sleep 30
-
+          if [ $TF_EXIT -ne 0 ]; then
             echo ""
-            echo "=== Terraform Apply Attempt 2 ==="
-            terraform apply -auto-approve \
-              -var="environment=dev" \
-              -var="aws_region=${{ env.AWS_REGION }}" \
-              -var="project_name=${{ env.EPHEMERAL_PREFIX }}" \
-              -var="dynamodb_table_name=${{ env.EPHEMERAL_PREFIX }}-store" \
-              -var='email_notification_endpoints=["${{ secrets.NOTIFICATION_EMAIL }}"]' \
-              -var="create_cloudwatch_alarms=false" \
-              2>&1 | tee /tmp/tf-apply-2.log
-            EXIT_CODE=${PIPESTATUS[0]}
-
-            if [ $EXIT_CODE -eq 0 ]; then
-              echo "Terraform apply succeeded on second attempt."
-              exit 0
-            fi
-
+            echo "============================================"
+            echo " TERRAFORM APPLY FAILED - DIAGNOSTIC INFO"
+            echo "============================================"
             echo ""
-            echo "=== Second attempt also failed ==="
-            echo "Full error output:"
-            cat /tmp/tf-apply-2.log
-            exit 1
-          else
-            echo "Not an IAM issue. Full error output:"
-            cat /tmp/tf-apply-1.log
+            echo "--- Error lines from terraform output ---"
+            grep -i "error\|InvalidParameter\|cannot be assumed\|exception" /tmp/tf-apply.log || true
+            echo ""
+            echo "--- Error lines from TF_LOG ---"
+            grep -i "error\|InvalidParameter\|cannot be assumed\|exception\|StatusCode: 4" /tmp/terraform-debug.log 2>/dev/null | tail -30 || true
+            echo ""
+            echo "--- AWS CLI test result: ${{ steps.cli-test.outputs.cli_test }} ---"
             exit 1
           fi
+
+          echo "Phase 2 complete. All resources deployed."
 
       - name: Capture Terraform Outputs
         id: tf-outputs
@@ -255,12 +353,11 @@ jobs:
           echo "Waiting for confirmation..."
           echo ""
 
-          MAX_WAIT=180  # 3 minutes
+          MAX_WAIT=180
           ELAPSED=0
           INTERVAL=15
 
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            # Check if any email subscription is confirmed
             CONFIRMED=$(aws sns list-subscriptions-by-topic \
               --topic-arn "$SNS_TOPIC_ARN" \
               --query "Subscriptions[?Protocol=='email' && SubscriptionArn!='PendingConfirmation'].SubscriptionArn" \
@@ -280,9 +377,8 @@ jobs:
 
           if [ $ELAPSED -ge $MAX_WAIT ]; then
             echo ""
-            echo "WARNING: Email subscription not confirmed within 3 minutes."
-            echo "The test will continue, but you may not receive the email notification."
-            echo "You can still verify the test via DynamoDB and CloudWatch Logs."
+            echo "WARNING: Email not confirmed within 3 minutes."
+            echo "Test will continue without email verification."
           fi
 
       # ================================================================
@@ -292,7 +388,7 @@ jobs:
         id: test-event
         run: |
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          TTL=$(( $(date -u +%s) + 7776000 ))  # 90 days
+          TTL=$(( $(date -u +%s) + 7776000 ))
           INCIDENT_ID="e2e-test-${{ github.run_id }}-$(date +%s)"
           ACCOUNT_ID="${{ steps.aws-account.outputs.account_id }}"
           RESOURCE_ARN="arn:aws:lambda:${{ env.AWS_REGION }}:${ACCOUNT_ID}:function:${{ env.EPHEMERAL_PREFIX }}-metrics-collector"
@@ -319,7 +415,6 @@ jobs:
           EOF
 
           echo "incident_id=${INCIDENT_ID}" >> "$GITHUB_OUTPUT"
-          echo ""
           echo "Test event:"
           cat /tmp/test-event.json | python -m json.tool
 
@@ -338,11 +433,9 @@ jobs:
 
           STATUS=$(echo "$RESULT" | python -c "import sys,json; print(json.load(sys.stdin).get('status','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
           echo "status=${STATUS}" >> "$GITHUB_OUTPUT"
-
           echo "Execution Status: ${STATUS}"
           echo ""
 
-          # Pretty-print the output
           OUTPUT=$(echo "$RESULT" | python -c "
           import sys, json
           r = json.load(sys.stdin)
@@ -367,12 +460,11 @@ jobs:
         run: |
           STATUS="${{ steps.sfn-exec.outputs.status }}"
           echo "Step Functions Status: ${STATUS}"
-
           if [ "${STATUS}" = "SUCCEEDED" ]; then
             echo "PASS: Step Functions execution completed successfully"
           else
             echo "WARNING: Step Functions status is ${STATUS}"
-            echo "This may be expected if Bedrock is not enabled in your account."
+            echo "This may be expected if Bedrock is not enabled."
           fi
 
       - name: Verify DynamoDB Record
@@ -380,12 +472,10 @@ jobs:
         run: |
           INCIDENT_ID="${{ steps.test-event.outputs.incident_id }}"
           TABLE_NAME="${{ steps.tf-outputs.outputs.dynamodb_table }}"
-
           echo "Querying DynamoDB table: ${TABLE_NAME}"
           echo "Looking for incident: ${INCIDENT_ID}"
           echo ""
 
-          # Query using the partition key
           ITEM=$(aws dynamodb query \
             --table-name "${TABLE_NAME}" \
             --key-condition-expression "incidentId = :id" \
@@ -395,9 +485,7 @@ jobs:
           COUNT=$(echo "$ITEM" | python -c "import sys,json; print(json.load(sys.stdin).get('Count',0))" 2>/dev/null || echo "0")
 
           if [ "$COUNT" -gt 0 ]; then
-            echo "PASS: DynamoDB record found for incident ${INCIDENT_ID}"
-            echo ""
-            echo "Record summary:"
+            echo "PASS: DynamoDB record found"
             echo "$ITEM" | python -c "
           import sys, json
           data = json.load(sys.stdin)
@@ -405,45 +493,36 @@ jobs:
               print(f\"  incidentId: {item.get('incidentId', {}).get('S', 'N/A')}\")
               print(f\"  timestamp:  {item.get('timestamp', {}).get('S', 'N/A')}\")
               print(f\"  alarmName:  {item.get('alarmName', {}).get('S', 'N/A')}\")
-              print(f\"  severity:   {item.get('severity', {}).get('S', 'N/A')}\")
           " 2>/dev/null || true
             echo "dynamodb_verified=true" >> "$GITHUB_OUTPUT"
           else
-            echo "WARNING: No DynamoDB record found for incident ${INCIDENT_ID}"
+            echo "WARNING: No DynamoDB record found"
             echo "dynamodb_verified=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify Lambda Invocations
         run: |
           echo "Checking CloudWatch Logs for Lambda invocations..."
-          echo ""
-
           PASS_COUNT=0
-          TOTAL=6
           for func in metrics-collector logs-collector deploy-context-collector \
                       correlation-engine llm-analyzer notification-service; do
             LOG_GROUP="/aws/lambda/${{ env.EPHEMERAL_PREFIX }}-${func}"
             STREAM=$(aws logs describe-log-streams \
               --log-group-name "${LOG_GROUP}" \
-              --order-by LastEventTime \
-              --descending \
-              --limit 1 \
+              --order-by LastEventTime --descending --limit 1 \
               --query 'logStreams[0].logStreamName' \
               --output text 2>/dev/null) || STREAM="NONE"
-
             if [ "$STREAM" != "NONE" ] && [ "$STREAM" != "None" ] && [ -n "$STREAM" ]; then
               echo "  PASS: ${func} was invoked"
               PASS_COUNT=$((PASS_COUNT + 1))
             else
-              echo "  SKIP: ${func} - no log streams found"
+              echo "  SKIP: ${func} - no log streams"
             fi
           done
-
-          echo ""
-          echo "Lambda invocations: ${PASS_COUNT}/${TOTAL} confirmed"
+          echo "Lambda invocations: ${PASS_COUNT}/6 confirmed"
 
       # ================================================================
-      # TEST REPORT
+      # TEST REPORT & CLEANUP
       # ================================================================
       - name: Generate Test Report
         if: always()
@@ -452,30 +531,19 @@ jobs:
           echo "============================================"
           echo "       EPHEMERAL E2E TEST REPORT"
           echo "============================================"
-          echo ""
           echo "  Run ID:            ${{ github.run_id }}"
           echo "  Project Name:      ${{ env.EPHEMERAL_PREFIX }}"
           echo "  Region:            ${{ env.AWS_REGION }}"
-          echo "  State Machine:     ${{ steps.tf-outputs.outputs.state_machine_arn }}"
-          echo "  DynamoDB Table:    ${{ steps.tf-outputs.outputs.dynamodb_table }}"
-          echo "  Incident ID:       ${{ steps.test-event.outputs.incident_id }}"
-          echo ""
-          echo "  Results:"
-          echo "    Step Functions:  ${{ steps.sfn-exec.outputs.status }}"
-          echo "    DynamoDB:        ${{ steps.verify-dynamodb.outputs.dynamodb_verified }}"
-          echo ""
+          echo "  CLI Lambda Test:   ${{ steps.cli-test.outputs.cli_test }}"
+          echo "  Step Functions:    ${{ steps.sfn-exec.outputs.status }}"
+          echo "  DynamoDB:          ${{ steps.verify-dynamodb.outputs.dynamodb_verified }}"
           echo "============================================"
 
-      # ================================================================
-      # CLEANUP (runs even if previous steps fail)
-      # ================================================================
       - name: Terraform Destroy (Cleanup)
         if: always()
         working-directory: terraform
         run: |
           echo "Destroying ephemeral infrastructure..."
-
-          # Re-init in case we never reached the init step
           terraform init -reconfigure \
             -backend-config="key=ephemeral-tests/run-${{ github.run_id }}/terraform.tfstate" \
             2>/dev/null || true
@@ -487,15 +555,13 @@ jobs:
             -var="dynamodb_table_name=${{ env.EPHEMERAL_PREFIX }}-store" \
             -var='email_notification_endpoints=["${{ secrets.NOTIFICATION_EMAIL }}"]' \
             -var="create_cloudwatch_alarms=false" \
-            || echo "WARNING: Terraform destroy may have partially failed. Check AWS console for orphaned resources with prefix: ${{ env.EPHEMERAL_PREFIX }}"
+            || echo "WARNING: Terraform destroy may have partially failed."
 
       - name: Cleanup Ephemeral State File
         if: always()
         run: |
-          echo "Cleaning up ephemeral state files from S3..."
           aws s3 rm "s3://ericchiu-terraform-state/ephemeral-tests/run-${{ github.run_id }}/" \
-            --recursive \
-            2>/dev/null || true
+            --recursive 2>/dev/null || true
           echo "State file cleanup complete."
 
       - name: Final Status
@@ -503,16 +569,13 @@ jobs:
         run: |
           STATUS="${{ steps.sfn-exec.outputs.status }}"
           DYNAMO="${{ steps.verify-dynamodb.outputs.dynamodb_verified }}"
-
           if [ "${STATUS}" = "SUCCEEDED" ] && [ "${DYNAMO}" = "true" ]; then
-            echo "E2E TEST PASSED - All verifications successful"
+            echo "E2E TEST PASSED"
             exit 0
           elif [ "${STATUS}" = "SUCCEEDED" ]; then
-            echo "E2E TEST PARTIAL PASS - Step Functions succeeded but DynamoDB record not verified"
+            echo "E2E TEST PARTIAL PASS"
             exit 0
           else
             echo "E2E TEST COMPLETED WITH WARNINGS - Status: ${STATUS}"
-            echo "Review the test report above for details."
-            # Soft fail - the system handles graceful degradation
             exit 0
           fi
