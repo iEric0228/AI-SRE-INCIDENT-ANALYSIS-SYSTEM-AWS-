@@ -452,6 +452,23 @@ data "aws_iam_policy_document" "orchestrator" {
       "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/aws/vendedlogs/states/${var.project_name}-orchestrator*"
     ]
   }
+
+  # Log delivery permissions required for Step Functions Express workflow logging
+  statement {
+    sid    = "CloudWatchLogsDelivery"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogDelivery",
+      "logs:DeleteLogDelivery",
+      "logs:DescribeLogGroups",
+      "logs:DescribeResourcePolicies",
+      "logs:GetLogDelivery",
+      "logs:ListLogDeliveries",
+      "logs:PutResourcePolicy",
+      "logs:UpdateLogDelivery"
+    ]
+    resources = ["*"]
+  }
 }
 
 # Lambda assume role policy (shared by all Lambda functions)
