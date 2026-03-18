@@ -293,4 +293,3 @@ If analyses are consistently low quality:
 - [AWS Systems Manager Parameter Store Documentation](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html)
 - [Amazon Bedrock Claude Model Documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-claude.html)
 - [Prompt Engineering Best Practices](https://docs.anthropic.com/claude/docs/prompt-engineering)
-- Requirements: 16.1, 16.2, 16.3, 16.4, 16.5 in `.kiro/specs/ai-sre-incident-analysis/requirements.md`

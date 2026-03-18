@@ -166,6 +166,4 @@ Wait 2-3 minutes after deployment for user data script to complete, then try aga
 
 **Now you're ready to build the main system!**
 
-Follow the implementation plan in `.kiro/specs/ai-sre-incident-analysis/tasks.md`
-
-Start with Task 1: Set up project structure and development environment.
+Follow the deployment guide in [terraform/DEPLOYMENT.md](terraform/DEPLOYMENT.md) to deploy the full incident analysis pipeline.

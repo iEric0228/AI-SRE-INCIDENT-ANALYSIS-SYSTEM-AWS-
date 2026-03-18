@@ -15,7 +15,7 @@ This project demonstrates production-grade incident management architecture usin
 - Parallel data collection with Step Functions orchestration
 - LLM-powered root-cause analysis using Amazon Bedrock (Claude)
 - Security-first design with least-privilege IAM policies
-- Complete observability with structured logging and X-Ray tracing
+- Complete observability with structured logging and custom CloudWatch metrics
 - Graceful degradation with partial failure handling
 
 ## Table of Contents
@@ -170,8 +170,8 @@ Structured alerts delivered via:
 ### Complete Observability
 - Structured JSON logging with correlation IDs
 - Custom CloudWatch metrics for workflow tracking
-- X-Ray distributed tracing
-- CloudWatch Alarms for system health
+- X-Ray tracing on Step Functions orchestrator
+- 12 CloudWatch Alarms for system self-monitoring
 
 ## Quick Start
 
@@ -463,10 +463,9 @@ The system validates 31 correctness properties using Hypothesis:
 | **DynamoDB** | On-demand, 100 incidents | $0.25 |
 | **CloudWatch Logs** | 7-day retention | $0.50 |
 | **Amazon Bedrock** | Claude, 100 invocations | $3.00 |
-| **CloudWatch Alarms** | 10 alarms | $0.00 (free tier) |
-| **X-Ray** | Traces | $0.00 (free tier) |
+| **CloudWatch Alarms** | 12 alarms | $1.20 |
 
-**Total Estimated Monthly Cost:** $3.75
+**Total Estimated Monthly Cost:** ~$5
 
 ### Cost Optimization Features
 
@@ -551,20 +550,19 @@ terraform force-unlock <lock-id>
 
 ## Documentation
 
+- **[QUICKSTART.md](QUICKSTART.md)**: 10-minute quick start guide
 - **[DEMO.md](docs/DEMO.md)**: Complete demo walkthrough with screenshots
 - **[DESIGN.md](docs/DESIGN.md)**: Architecture patterns and design decisions
 - **[RUNBOOKS.md](docs/RUNBOOKS.md)**: Operational runbooks for DLQ processing, Lambda debugging, secret rotation, and system recovery
 - **[DEPLOYMENT.md](terraform/DEPLOYMENT.md)**: Detailed Terraform deployment guide
 - **[PROMPT_TEMPLATE.md](docs/PROMPT_TEMPLATE.md)**: LLM prompt engineering documentation
+- **[STRUCTURED_LOGGING.md](docs/STRUCTURED_LOGGING.md)**: Structured JSON logging implementation
 - **[Architecture Decision Records](docs/adr/)**: Key design decisions and trade-offs
   - [ADR-001](docs/adr/001-express-vs-standard-workflows.md): Express vs Standard Step Functions
   - [ADR-002](docs/adr/002-arm64-lambda-architecture.md): ARM64 Lambda architecture
   - [ADR-003](docs/adr/003-advisory-only-llm.md): Advisory-only LLM with explicit IAM denies
   - [ADR-004](docs/adr/004-on-demand-dynamodb.md): On-demand DynamoDB billing
   - [ADR-005](docs/adr/005-parallel-fan-out-collectors.md): Parallel fan-out data collectors
-- **[Requirements](.kiro/specs/ai-sre-incident-analysis/requirements.md)**: Detailed requirements and acceptance criteria
-- **[Design](.kiro/specs/ai-sre-incident-analysis/design.md)**: Technical design and architecture decisions
-- **[Tasks](.kiro/specs/ai-sre-incident-analysis/tasks.md)**: Implementation plan and task breakdown
 
 ## Technology Stack
 
@@ -581,7 +579,7 @@ terraform force-unlock <lock-id>
 | **AI/ML** | Amazon Bedrock (Claude) | Root-cause analysis |
 | **Secrets** | Secrets Manager | Credential storage |
 | **Configuration** | Parameter Store | Template versioning |
-| **Observability** | CloudWatch + X-Ray | Logging and tracing |
+| **Observability** | CloudWatch | Logging, metrics, and alarms |
 
 ### Development
 
@@ -601,11 +599,6 @@ terraform force-unlock <lock-id>
 │   └── workflows/
 │       ├── ci-cd.yml        # CI/CD pipeline (lint, test, deploy)
 │       └── codeql-analysis.yml  # SAST security scanning
-├── .kiro/specs/             # Feature specifications
-│   └── ai-sre-incident-analysis/
-│       ├── requirements.md  # Requirements and acceptance criteria
-│       ├── design.md        # Technical design
-│       └── tasks.md         # Implementation plan
 ├── src/                     # Lambda function source code
 │   ├── metrics_collector/
 │   ├── logs_collector/
@@ -636,6 +629,7 @@ terraform force-unlock <lock-id>
 │   └── conftest.py
 ├── scripts/                 # Utility scripts
 │   ├── create_prompt_template.py
+│   ├── package-lambdas.sh
 │   ├── trigger-test-alarm.sh
 │   ├── reset-test-alarm.sh
 │   ├── capture-alarm-event.sh
@@ -651,7 +645,8 @@ terraform force-unlock <lock-id>
 │   ├── DEMO.md
 │   ├── DESIGN.md
 │   ├── PROMPT_TEMPLATE.md
-│   └── RUNBOOKS.md          # Operational runbooks
+│   ├── RUNBOOKS.md
+│   └── STRUCTURED_LOGGING.md
 ├── requirements.txt         # Python dependencies
 ├── requirements-dev.txt     # Development dependencies
 └── README.md               # This file
@@ -700,7 +695,7 @@ This project demonstrates:
 2. **Parallel Processing**: Step Functions fan-out pattern for performance
 3. **AI Integration**: Structured LLM prompts with Amazon Bedrock for intelligent analysis
 4. **Security Best Practices**: Least-privilege IAM, explicit denies, no credentials in code
-5. **Observability**: Structured logging, custom metrics, distributed tracing
+5. **Observability**: Structured logging, custom metrics, self-monitoring alarms
 6. **Graceful Degradation**: Partial failures don't block workflow completion
 7. **Infrastructure as Code**: Reproducible, version-controlled Terraform modules
 8. **Property-Based Testing**: Hypothesis for comprehensive correctness validation

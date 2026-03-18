@@ -10,8 +10,6 @@ Creates and stores the LLM prompt template in AWS Systems Manager Parameter Stor
 
 **Purpose**: Initialize the prompt template that guides the Amazon Bedrock Claude model in analyzing incidents.
 
-**Requirements**: 16.1, 16.2, 16.3, 16.4, 16.5
-
 **Prerequisites**:
 - AWS credentials configured (`aws configure`)
 - IAM permissions for `ssm:PutParameter` and `ssm:GetParameter`
@@ -85,37 +83,56 @@ pytest tests/unit/test_prompt_template.py -v
 
 **Related Documentation**:
 - [docs/PROMPT_TEMPLATE.md](../docs/PROMPT_TEMPLATE.md) - Detailed prompt template documentation
-- [.kiro/specs/ai-sre-incident-analysis/requirements.md](../.kiro/specs/ai-sre-incident-analysis/requirements.md) - Requirement 16
 
-## Future Scripts
+### trigger-test-alarm.sh
 
-Additional scripts will be added as the project progresses:
+SSHes into the test EC2 instance and runs `stress-ng` to spike CPU, triggering the CloudWatch alarm and the full incident analysis pipeline.
 
-- `trigger-test-alarm.sh` - Trigger test CloudWatch Alarm for development
-- `capture-alarm-event.sh` - Extract EventBridge event from CloudWatch Logs
-- `reset-test-alarm.sh` - Return test alarm to OK state
-- `deploy-infrastructure.sh` - Deploy Terraform infrastructure
-- `run-integration-tests.sh` - Execute end-to-end integration tests
+```bash
+./scripts/trigger-test-alarm.sh
+```
 
-## Development Guidelines
+### reset-test-alarm.sh
 
-When adding new scripts:
+Resets the test CloudWatch alarm back to OK state after testing.
 
-1. **Naming**: Use descriptive names with underscores (Python) or hyphens (Bash)
-2. **Shebang**: Include appropriate shebang (`#!/usr/bin/env python3` or `#!/bin/bash`)
-3. **Documentation**: Add docstring/comments explaining purpose and usage
-4. **Error Handling**: Include proper error handling and user-friendly messages
-5. **Permissions**: Make scripts executable (`chmod +x script.sh`)
-6. **Testing**: Add unit tests for Python scripts where applicable
-7. **README**: Update this README with script documentation
+```bash
+./scripts/reset-test-alarm.sh
+```
+
+### capture-alarm-event.sh
+
+Captures a raw EventBridge/CloudWatch alarm event from CloudWatch Logs for use as test data.
+
+```bash
+./scripts/capture-alarm-event.sh
+```
+
+### package-lambdas.sh
+
+Packages all Lambda functions into deployment ZIPs with dependencies for ARM64 architecture.
+
+```bash
+./scripts/package-lambdas.sh
+```
+
+### setup-github-oidc.sh
+
+Sets up GitHub Actions OIDC authentication with AWS for keyless CI/CD deployments.
+
+```bash
+./scripts/setup-github-oidc.sh
+```
 
 ## Script Organization
 
 ```
 scripts/
-├── README.md                      # This file
-├── create_prompt_template.py      # LLM prompt template setup
-├── trigger-test-alarm.sh          # (Future) Trigger test alarm
-├── capture-alarm-event.sh         # (Future) Capture EventBridge event
-└── reset-test-alarm.sh            # (Future) Reset test alarm
+├── README.md                  # This file
+├── create_prompt_template.py  # LLM prompt template setup
+├── trigger-test-alarm.sh      # Trigger test alarm via CPU stress
+├── reset-test-alarm.sh        # Reset test alarm to OK state
+├── capture-alarm-event.sh     # Capture EventBridge event payload
+├── package-lambdas.sh         # Package Lambda deployment ZIPs
+└── setup-github-oidc.sh       # Configure GitHub OIDC for CI/CD
 ```
