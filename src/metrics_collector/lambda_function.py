@@ -422,11 +422,20 @@ def parse_resource_arn(resource_arn: str) -> Tuple[str, List[Dict[str, str]]]:
         "sqs": "AWS/SQS",
         "sns": "AWS/SNS",
         "apigateway": "AWS/ApiGateway",
-        "elasticloadbalancing": "AWS/ELB",
         "s3": "AWS/S3",
+        "eks": "AWS/ContainerInsights",
+        "elasticache": "AWS/ElastiCache",
+        "es": "AWS/ES",
     }
 
-    namespace = namespace_map.get(service, f"AWS/{service.upper()}")
+    # Distinguish ALB vs NLB based on ARN path
+    if service == "elasticloadbalancing":
+        if "/net/" in resource_part:
+            namespace = "AWS/NetworkELB"
+        else:
+            namespace = "AWS/ApplicationELB"
+    else:
+        namespace = namespace_map.get(service, f"AWS/{service.upper()}")
 
     # Extract resource name/ID and create dimensions
     dimensions = []
@@ -463,6 +472,29 @@ def parse_resource_arn(resource_arn: str) -> Tuple[str, List[Dict[str, str]]]:
         # arn:aws:dynamodb:region:account:table/table-name
         table_name = resource_part.split("/")[-1]
         dimensions = [{"Name": "TableName", "Value": table_name}]
+
+    elif service == "elasticloadbalancing":
+        # arn:aws:elasticloadbalancing:region:account:loadbalancer/app/name/id
+        # or loadbalancer/net/name/id
+        lb_parts = resource_part.split("/", 1)
+        if len(lb_parts) >= 2:
+            lb_value = lb_parts[1]  # e.g. "app/name/id" or "net/name/id"
+            dimensions = [{"Name": "LoadBalancer", "Value": lb_value}]
+
+    elif service == "eks":
+        # arn:aws:eks:region:account:cluster/cluster-name
+        cluster_name = resource_part.split("/")[-1]
+        dimensions = [{"Name": "ClusterName", "Value": cluster_name}]
+
+    elif service == "elasticache":
+        # arn:aws:elasticache:region:account:cluster:cluster-id
+        cluster_id = resource_part.split(":")[-1] if ":" in resource_part else resource_part.split("/")[-1]
+        dimensions = [{"Name": "CacheClusterId", "Value": cluster_id}]
+
+    elif service == "es":
+        # arn:aws:es:region:account:domain/domain-name
+        domain_name = resource_part.split("/")[-1]
+        dimensions = [{"Name": "DomainName", "Value": domain_name}]
 
     return namespace, dimensions
 
@@ -502,6 +534,41 @@ def get_default_metrics_for_namespace(namespace: str) -> List[str]:
             "ApproximateNumberOfMessagesVisible",
         ],
         "AWS/ApiGateway": ["Count", "4XXError", "5XXError", "Latency"],
+        "AWS/ApplicationELB": [
+            "RequestCount",
+            "TargetResponseTime",
+            "HTTPCode_ELB_5XX_Count",
+            "HTTPCode_Target_5XX_Count",
+            "HealthyHostCount",
+            "UnHealthyHostCount",
+        ],
+        "AWS/NetworkELB": [
+            "ActiveFlowCount",
+            "NewFlowCount",
+            "ProcessedBytes",
+            "TCP_Target_Reset_Count",
+            "UnHealthyHostCount",
+        ],
+        "AWS/ContainerInsights": [
+            "cluster_failed_node_count",
+            "node_cpu_utilization",
+            "node_memory_utilization",
+            "pod_cpu_utilization",
+        ],
+        "AWS/ElastiCache": [
+            "CPUUtilization",
+            "FreeableMemory",
+            "CurrConnections",
+            "Evictions",
+            "CacheHitRate",
+        ],
+        "AWS/ES": [
+            "ClusterStatus.red",
+            "FreeStorageSpace",
+            "CPUUtilization",
+            "JVMMemoryPressure",
+            "SearchLatency",
+        ],
     }
 
     return metric_map.get(namespace, ["CPUUtilization", "NetworkIn", "NetworkOut"])

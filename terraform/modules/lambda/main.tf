@@ -1,5 +1,11 @@
 # Lambda Functions Module
-# This module creates all 6 Lambda functions with ARM64 architecture and appropriate configurations
+# This module creates all 7 Lambda functions with ARM64 architecture and appropriate configurations
+
+# Lambda Insights layer configuration
+locals {
+  lambda_insights_layer_arn = "arn:aws:lambda:${var.aws_region}:580247275435:layer:LambdaInsightsExtension-Arm64:${var.lambda_insights_layer_version}"
+  lambda_insights_layers    = var.enable_lambda_insights ? [local.lambda_insights_layer_arn] : []
+}
 
 # Metrics Collector Lambda Function
 resource "aws_lambda_function" "metrics_collector" {
@@ -11,6 +17,7 @@ resource "aws_lambda_function" "metrics_collector" {
   memory_size                    = 512
   timeout                        = 20
   reserved_concurrent_executions = var.lambda_concurrency_limit
+  layers                         = local.lambda_insights_layers
 
   filename         = var.lambda_packages.metrics_collector
   source_code_hash = filebase64sha256(var.lambda_packages.metrics_collector)
@@ -44,15 +51,17 @@ resource "aws_lambda_function" "logs_collector" {
   memory_size                    = 512
   timeout                        = 20
   reserved_concurrent_executions = var.lambda_concurrency_limit
+  layers                         = local.lambda_insights_layers
 
   filename         = var.lambda_packages.logs_collector
   source_code_hash = filebase64sha256(var.lambda_packages.logs_collector)
 
   environment {
     variables = {
-      DYNAMODB_TABLE     = var.dynamodb_table_name
-      LOG_LEVEL          = var.log_level
-      INCIDENT_TOPIC_ARN = var.sns_topic_arn
+      DYNAMODB_TABLE         = var.dynamodb_table_name
+      LOG_LEVEL              = var.log_level
+      INCIDENT_TOPIC_ARN     = var.sns_topic_arn
+      LOG_GROUP_MAPPING_PARAM = var.log_group_mapping_parameter_name
     }
   }
 
@@ -77,6 +86,7 @@ resource "aws_lambda_function" "deploy_context_collector" {
   memory_size                    = 512
   timeout                        = 20
   reserved_concurrent_executions = var.lambda_concurrency_limit
+  layers                         = local.lambda_insights_layers
 
   filename         = var.lambda_packages.deploy_context_collector
   source_code_hash = filebase64sha256(var.lambda_packages.deploy_context_collector)
@@ -110,6 +120,7 @@ resource "aws_lambda_function" "correlation_engine" {
   memory_size                    = 256
   timeout                        = 10
   reserved_concurrent_executions = var.lambda_concurrency_limit
+  layers                         = local.lambda_insights_layers
 
   filename         = var.lambda_packages.correlation_engine
   source_code_hash = filebase64sha256(var.lambda_packages.correlation_engine)
@@ -144,6 +155,7 @@ resource "aws_lambda_function" "llm_analyzer" {
   memory_size                    = 1024
   timeout                        = 40
   reserved_concurrent_executions = var.lambda_concurrency_limit
+  layers                         = local.lambda_insights_layers
 
   filename         = var.lambda_packages.llm_analyzer
   source_code_hash = filebase64sha256(var.lambda_packages.llm_analyzer)
@@ -179,6 +191,7 @@ resource "aws_lambda_function" "notification_service" {
   memory_size                    = 256
   timeout                        = 15
   reserved_concurrent_executions = var.lambda_concurrency_limit
+  layers                         = local.lambda_insights_layers
 
   filename         = var.lambda_packages.notification_service
   source_code_hash = filebase64sha256(var.lambda_packages.notification_service)
@@ -215,6 +228,7 @@ resource "aws_lambda_function" "event_transformer" {
   memory_size                    = 256
   timeout                        = 15
   reserved_concurrent_executions = var.lambda_concurrency_limit
+  layers                         = local.lambda_insights_layers
 
   filename         = var.lambda_packages.event_transformer
   source_code_hash = filebase64sha256(var.lambda_packages.event_transformer)

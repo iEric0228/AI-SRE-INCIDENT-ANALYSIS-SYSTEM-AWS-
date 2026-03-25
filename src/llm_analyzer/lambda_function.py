@@ -44,6 +44,7 @@ from prompt_builder import (  # noqa: E402
     construct_prompt,
     get_default_prompt_template,
     retrieve_prompt_template,
+    select_prompt_template,
 )
 from response_parser import parse_llm_response  # noqa: E402
 
@@ -66,6 +67,7 @@ __all__ = [
     "construct_prompt",
     "get_default_prompt_template",
     "retrieve_prompt_template",
+    "select_prompt_template",
     "parse_llm_response",
 ]
 
@@ -268,9 +270,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         bedrock_client = get_bedrock_client()
         ssm_client = get_ssm_client()
 
-        # Retrieve prompt template (delegated to prompt_builder)
+        # Select prompt template based on event source (guardduty, health, or cloudwatch)
+        event_source = event.get("eventSource", structured_context.get("eventSource", "cloudwatch"))
         param_name = os.environ.get("PROMPT_TEMPLATE_PARAM", "/incident-analysis/prompt-template")
-        prompt_info = retrieve_prompt_template(ssm_client, parameter_name=param_name)
+        prompt_info = select_prompt_template(event_source, ssm_client, param_name)
         template = prompt_info["template"]
         prompt_version = prompt_info["version"]
 

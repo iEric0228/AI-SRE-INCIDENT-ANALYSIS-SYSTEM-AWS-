@@ -429,6 +429,29 @@ def parse_resource_arn_for_cloudtrail(resource_arn: str) -> Tuple[str, Optional[
         resource_id = resource_part.split("/")[-1]
         return service, resource_id
 
+    elif service == "elasticloadbalancing":
+        # arn:aws:elasticloadbalancing:region:account:loadbalancer/app/name/id
+        lb_parts = resource_part.split("/")
+        if len(lb_parts) >= 3:
+            resource_id = lb_parts[2]  # load balancer name
+            return service, resource_id
+        return service, None
+
+    elif service == "eks":
+        # arn:aws:eks:region:account:cluster/cluster-name
+        resource_id = resource_part.split("/")[-1]
+        return service, resource_id
+
+    elif service == "elasticache":
+        # arn:aws:elasticache:region:account:cluster:cluster-id
+        resource_id = resource_part.split(":")[-1] if ":" in resource_part else resource_part.split("/")[-1]
+        return service, resource_id
+
+    elif service == "es":
+        # arn:aws:es:region:account:domain/domain-name
+        resource_id = resource_part.split("/")[-1]
+        return service, resource_id
+
     return service, None
 
 

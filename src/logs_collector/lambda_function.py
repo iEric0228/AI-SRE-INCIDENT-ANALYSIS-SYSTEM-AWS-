@@ -30,6 +30,15 @@ logs_client = boto3.client("logs")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
 from metrics import put_collector_success_metric  # noqa: E402
 
+# Initialize log group resolver with SSM-based configuration
+from log_group_resolver import LogGroupResolver  # noqa: E402
+
+_ssm_client = boto3.client("ssm")
+_LOG_GROUP_MAPPING_PARAM = os.environ.get(
+    "LOG_GROUP_MAPPING_PARAM", "/ai-sre-incident-analysis/log-group-mappings"
+)
+_log_group_resolver = LogGroupResolver(_ssm_client, _LOG_GROUP_MAPPING_PARAM)
+
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -68,16 +77,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Parse timestamp
         incident_timestamp = parse_timestamp(timestamp_str)
 
-        # Determine log group name if not provided
+        # Determine log group names
+        event_source = event.get("eventSource", "cloudwatch")
+
         if not log_group_name:
-            log_group_name = map_resource_arn_to_log_group(resource_arn)
+            resolved_groups = _log_group_resolver.resolve(resource_arn)
+            log_group_name = resolved_groups[0] if resolved_groups else map_resource_arn_to_log_group(resource_arn)
+
+        # Build list of log groups to query
+        log_groups_to_query = [{"name": log_group_name, "source": "application"}]
+
+        # For security events, add CloudTrail and VPC Flow Log groups
+        if event_source == "guardduty":
+            log_groups_to_query.extend(_get_security_log_groups(resource_arn))
 
         logger.info(
             json.dumps(
                 {
-                    "message": "Resolved log group name",
+                    "message": "Resolved log groups",
                     "correlationId": correlation_id,
-                    "logGroupName": log_group_name,
+                    "logGroups": [lg["name"] for lg in log_groups_to_query],
+                    "eventSource": event_source,
                 }
             )
         )
@@ -96,13 +116,26 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             )
         )
 
-        # Collect logs with filtering
-        logs_data, total_matches = collect_logs(
-            log_group_name=log_group_name,
-            start_time=start_time_range,
-            end_time=end_time_range,
-            correlation_id=correlation_id,
-        )
+        # Collect logs from all log groups
+        all_logs_data = []
+        total_matches = 0
+
+        for lg_info in log_groups_to_query:
+            filter_pattern = _get_filter_pattern(lg_info["source"])
+            lg_logs, lg_matches = collect_logs(
+                log_group_name=lg_info["name"],
+                start_time=start_time_range,
+                end_time=end_time_range,
+                correlation_id=correlation_id,
+                filter_pattern=filter_pattern,
+            )
+            # Tag each log entry with its source
+            for entry in lg_logs:
+                entry["logSource"] = lg_info["source"]
+            all_logs_data.extend(lg_logs)
+            total_matches += lg_matches
+
+        logs_data = all_logs_data[:100]  # Limit total across all sources
 
         # Calculate collection duration
         collection_duration = (datetime.utcnow() - start_time).total_seconds()
@@ -353,12 +386,82 @@ def map_resource_arn_to_log_group(resource_arn: str) -> str:
         api_id = resource_part.split("/")[-1]
         return f"/aws/apigateway/{api_id}"
 
+    elif service == "elasticloadbalancing":
+        # arn:aws:elasticloadbalancing:region:account:loadbalancer/app/name/id
+        lb_parts = resource_part.split("/")
+        if len(lb_parts) >= 3:
+            lb_type = lb_parts[1]  # "app" or "net"
+            lb_name = lb_parts[2]
+            if lb_type == "net":
+                return f"/aws/nlb/{lb_name}"
+            return f"/aws/alb/{lb_name}"
+        return f"/aws/elb/{resource_part}"
+
+    elif service == "eks":
+        # arn:aws:eks:region:account:cluster/cluster-name
+        cluster_name = resource_part.split("/")[-1]
+        return f"/aws/eks/{cluster_name}/cluster"
+
+    elif service == "elasticache":
+        # arn:aws:elasticache:region:account:cluster:cluster-id
+        cluster_id = resource_part.split(":")[-1] if ":" in resource_part else resource_part.split("/")[-1]
+        return f"/aws/elasticache/{cluster_id}"
+
+    elif service == "es":
+        # arn:aws:es:region:account:domain/domain-name
+        domain_name = resource_part.split("/")[-1]
+        return f"/aws/opensearch/domains/{domain_name}"
+
     # Default pattern
     return f"/aws/{service}/{resource_part}"
 
 
+def _get_security_log_groups(resource_arn: str) -> List[Dict[str, str]]:
+    """
+    Get additional security-focused log groups for GuardDuty events.
+
+    Args:
+        resource_arn: AWS resource ARN
+
+    Returns:
+        List of log group info dicts with 'name' and 'source' keys
+    """
+    security_groups: List[Dict[str, str]] = []
+
+    # CloudTrail logs (standard log group name)
+    security_groups.append({"name": "/aws/cloudtrail", "source": "cloudtrail"})
+
+    # VPC Flow Logs — only for EC2/ENI resources
+    parts = resource_arn.split(":")
+    if len(parts) >= 3 and parts[2] == "ec2":
+        security_groups.append({"name": "/aws/vpc/flowlogs", "source": "vpc_flow"})
+
+    return security_groups
+
+
+def _get_filter_pattern(log_source: str) -> str:
+    """
+    Get the appropriate filter pattern based on log source type.
+
+    Args:
+        log_source: Type of log source (application, cloudtrail, vpc_flow)
+
+    Returns:
+        CloudWatch Logs filter pattern string
+    """
+    if log_source == "cloudtrail":
+        return "?UnauthorizedAccess ?AccessDenied ?ConsoleLogin ?AssumeRole ?PolicyChanged ?CreateUser ?DeleteUser ?AttachPolicy ?DetachPolicy"
+
+    if log_source == "vpc_flow":
+        return "REJECT"
+
+    # Default application log filter
+    return "?ERROR ?WARN ?CRITICAL ?Error ?Warning ?error ?warn ?critical"
+
+
 def collect_logs(
-    log_group_name: str, start_time: datetime, end_time: datetime, correlation_id: str
+    log_group_name: str, start_time: datetime, end_time: datetime, correlation_id: str,
+    filter_pattern: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     """
     Collect logs from CloudWatch Logs with filtering.
@@ -381,11 +484,9 @@ def collect_logs(
     start_time_ms = int(start_time.timestamp() * 1000)
     end_time_ms = int(end_time.timestamp() * 1000)
 
-    # FILTER PATTERN STRATEGY:
-    # Pattern matches common log formats with ERROR/WARN/CRITICAL keywords
-    # Case-insensitive matching with '?' prefix
-    # Matches: ERROR, WARN, CRITICAL, Error, Warning, error, warn, critical
-    filter_pattern = "?ERROR ?WARN ?CRITICAL ?Error ?Warning ?error ?warn ?critical"
+    # Use provided filter pattern or default to error keywords
+    if filter_pattern is None:
+        filter_pattern = "?ERROR ?WARN ?CRITICAL ?Error ?Warning ?error ?warn ?critical"
 
     all_logs = []
     next_token = None

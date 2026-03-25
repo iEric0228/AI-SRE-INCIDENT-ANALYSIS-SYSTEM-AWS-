@@ -357,6 +357,35 @@ variable "create_cloudwatch_alarms" {
   default     = true
 }
 
+variable "enable_guardduty_events" {
+  description = "Enable GuardDuty finding events as an incident source (MEDIUM severity and above)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_health_events" {
+  description = "Enable AWS Health events as an incident source (issues and scheduled changes)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_lambda_insights" {
+  description = "Enable CloudWatch Lambda Insights monitoring for all Lambda functions"
+  type        = bool
+  default     = true
+}
+
+variable "log_group_mapping_parameter_name" {
+  description = "SSM parameter name for custom log group mappings"
+  type        = string
+  default     = "/ai-sre-incident-analysis/log-group-mappings"
+
+  validation {
+    condition     = can(regex("^/[a-zA-Z0-9/_.-]+$", var.log_group_mapping_parameter_name))
+    error_message = "Parameter name must start with / and contain only alphanumeric characters and /_.- symbols."
+  }
+}
+
 # ============================================================================
 # Security Configuration
 # ============================================================================

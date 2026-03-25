@@ -26,6 +26,18 @@ variable "email_endpoints" {
   default     = []
 }
 
+variable "enable_guardduty_events" {
+  description = "Enable EventBridge rule for GuardDuty findings"
+  type        = bool
+  default     = false
+}
+
+variable "enable_health_events" {
+  description = "Enable EventBridge rule for AWS Health events"
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

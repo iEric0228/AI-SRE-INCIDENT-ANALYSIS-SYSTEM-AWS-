@@ -1,6 +1,6 @@
 # AI-Assisted SRE Incident Analysis System
 
-> An event-driven AWS serverless pipeline that automatically detects infrastructure issues, collects contextual data, and generates AI-powered root-cause hypotheses using Amazon Bedrock.
+> An event-driven AWS serverless pipeline that automatically detects infrastructure incidents, security threats, and service disruptions — then collects contextual data and generates AI-powered root-cause hypotheses using Amazon Bedrock.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -12,10 +12,13 @@
 This project demonstrates production-grade incident management architecture using AWS serverless technologies and AI. The system is **advisory-only** (no auto-remediation) and showcases modern SRE practices including:
 
 - Event-driven serverless architecture on AWS
+- **Multi-source event ingestion**: CloudWatch Alarms, GuardDuty security findings, AWS Health events
+- **Broad resource coverage**: EC2, RDS, Lambda, SQS, ECS, API Gateway, ALB/NLB, EKS, ElastiCache, OpenSearch
 - Parallel data collection with Step Functions orchestration
-- LLM-powered root-cause analysis using Amazon Bedrock (Claude)
+- LLM-powered root-cause analysis using Amazon Bedrock (Claude) with source-specific prompt templates
 - Security-first design with least-privilege IAM policies
-- Complete observability with structured logging and custom CloudWatch metrics
+- Complete observability with structured logging, custom CloudWatch metrics, and Lambda Insights
+- Configurable log group mapping via SSM Parameter Store
 - Graceful degradation with partial failure handling
 
 ## Table of Contents
@@ -98,30 +101,37 @@ RECOMMENDED ACTIONS:
 ```mermaid
 graph TB
     CW[CloudWatch Alarms] -->|State Change| EB[EventBridge]
+    GD[GuardDuty Findings] -->|Security Event| EB
+    AH[AWS Health Events] -->|Service Disruption| EB
     EB -->|Match Pattern| SNS[SNS Topic]
-    SNS -->|Trigger| SF[Step Functions Orchestrator]
-    
+    SNS -->|Trigger| ET[Event Transformer Lambda]
+    ET -->|Normalized Event| SF[Step Functions Orchestrator]
+
     SF -->|Parallel Invoke| MC[Metrics Collector Lambda]
     SF -->|Parallel Invoke| LC[Logs Collector Lambda]
     SF -->|Parallel Invoke| DC[Deploy Context Collector Lambda]
-    
+
     MC -->|Metrics JSON| CE[Correlation Engine Lambda]
     LC -->|Logs JSON| CE
     DC -->|Changes JSON| CE
-    
+
     CE -->|Structured Context| LLM[LLM Analyzer Lambda]
     LLM -->|Analysis Report| NS[Notification Service Lambda]
     LLM -->|Analysis Report| DB[(DynamoDB Incident Store)]
-    
+
     NS -->|Webhook| Slack[Slack Channel]
     NS -->|SNS Email| Email[Email Distribution]
-    
+
     SM[Secrets Manager] -.->|Slack Webhook| NS
     SM -.->|Email Config| NS
-    PS[Parameter Store] -.->|Prompt Template| LLM
+    PS[Parameter Store] -.->|Prompt Template + Log Mapping| LLM
     BR[Amazon Bedrock] -.->|Claude Model| LLM
-    
+    CT[CloudTrail Logs] -.->|Security Context| LC
+    VPC[VPC Flow Logs] -.->|Network Context| LC
+
     style CW fill:#ff9999
+    style GD fill:#ff6666
+    style AH fill:#ffcc66
     style SF fill:#ffd700
     style LLM fill:#87ceeb
     style DB fill:#dda0dd
@@ -133,28 +143,52 @@ graph TB
 | Pattern | Implementation | Benefit |
 |---------|---------------|---------|
 | **Event-Driven** | SNS + EventBridge for component communication | Loose coupling, scalability |
+| **Multi-Source Ingestion** | EventBridge rules for CloudWatch, GuardDuty, Health | Unified pipeline for diverse event types |
 | **Parallel Fan-Out** | Step Functions parallel state | Minimize latency (3 collectors run simultaneously) |
 | **Correlation Layer** | Dedicated Lambda for data normalization | Unified data structure for LLM |
+| **Source-Specific Prompts** | Template routing by event source | Tailored analysis (infra vs security vs health) |
+| **Config-Driven Mapping** | SSM Parameter Store for log group resolution | Runtime reconfiguration without redeployment |
+| **Circuit Breaker** | Bedrock invocation with failure tracking | Prevent cascading failures during outages |
 | **Advisory-Only AI** | LLM with explicit IAM denies | Safe recommendations without mutation risk |
 | **Graceful Degradation** | Catch blocks in Step Functions | Workflow continues with partial data |
 
 ## Key Features
 
-### Automatic Incident Detection
-CloudWatch Alarms trigger the analysis workflow automatically when thresholds are breached.
+### Multi-Source Event Ingestion
+Three event sources feed into the analysis pipeline:
+- **CloudWatch Alarms**: Infrastructure metric threshold breaches (CPU, memory, errors, latency)
+- **GuardDuty Findings**: Security threats including unauthorized access, compromised instances, and suspicious API calls (severity >= 4.0)
+- **AWS Health Events**: Service disruptions and scheduled maintenance affecting your resources
+
+### Broad Resource Coverage
+Supports 10+ AWS resource types out of the box:
+
+| Resource Type | Metrics | Logs | Deploy Context |
+|---------------|---------|------|----------------|
+| EC2 | CPU, Network, Disk | System logs | CloudTrail |
+| RDS | CPU, Connections, Replica Lag | Error logs | CloudTrail |
+| Lambda | Errors, Duration, Throttles | Function logs | CloudTrail |
+| SQS | Queue depth, Age | - | CloudTrail |
+| ECS | CPU, Memory | Container logs | CloudTrail |
+| API Gateway | 5XX, Latency, Count | Access logs | CloudTrail |
+| ALB | 5XX, Target Response Time | Access logs | CloudTrail |
+| NLB | Flows, Processed Bytes | Access logs | CloudTrail |
+| EKS | Pod/Node metrics | Control plane logs | CloudTrail |
+| ElastiCache | CPU, Memory, Connections | Engine logs | CloudTrail |
+| OpenSearch | CPU, JVM, Search Latency | Application logs | CloudTrail |
 
 ### Intelligent Data Collection
 Three specialized collectors run in parallel:
-- **Metrics Collector**: CloudWatch metrics with statistical analysis
-- **Logs Collector**: Error/warning logs with filtering and limiting
+- **Metrics Collector**: CloudWatch metrics with per-service metric configs and statistical analysis
+- **Logs Collector**: Error/warning logs with configurable log group mapping, plus CloudTrail and VPC Flow Logs for security events
 - **Deploy Context Collector**: Recent infrastructure changes from CloudTrail
 
 ### AI-Powered Analysis
-Amazon Bedrock (Claude) generates:
-- Root-cause hypotheses with confidence levels
-- Supporting evidence from collected data
-- Contributing factors analysis
-- Actionable remediation recommendations
+Amazon Bedrock (Claude) generates source-specific analysis:
+- **Infrastructure incidents**: Root-cause hypotheses with metric correlation
+- **Security findings**: Threat assessment with containment recommendations
+- **Health events**: Impact assessment with mitigation options
+- Confidence levels, supporting evidence, and actionable remediation steps
 
 ### Multi-Channel Notifications
 Structured alerts delivered via:
@@ -172,6 +206,7 @@ Structured alerts delivered via:
 - Custom CloudWatch metrics for workflow tracking
 - X-Ray tracing on Step Functions orchestrator
 - 12 CloudWatch Alarms for system self-monitoring
+- **Lambda Insights**: CPU, memory, network, and cold start monitoring for all 7 functions (opt-in via Terraform variable)
 
 ## Quick Start
 
@@ -452,18 +487,60 @@ The system validates 31 correctness properties using Hypothesis:
 - ✅ TTL configuration correctness
 - ✅ And 22 more...
 
+## Configuration
+
+### Terraform Variables
+
+Key configuration options in `terraform.tfvars`:
+
+```hcl
+# Event sources (opt-in)
+enable_guardduty_events = true   # Enable GuardDuty security finding ingestion
+enable_health_events    = true   # Enable AWS Health event ingestion
+
+# Observability
+enable_lambda_insights  = true   # Enable CloudWatch Lambda Insights for all functions
+
+# Log group mapping
+log_group_mapping_parameter_name = "/incident-analysis/log-group-mapping"
+```
+
+### Configurable Log Group Mapping
+
+Log group resolution can be customized at runtime via SSM Parameter Store without redeployment:
+
+```json
+{
+  "overrides": {
+    "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123": [
+      "/custom/app/logs"
+    ]
+  },
+  "additional": {
+    "arn:aws:lambda:us-east-1:123456789012:function:my-func": [
+      "/extra/debug/logs"
+    ]
+  }
+}
+```
+
+- **overrides**: Completely replace built-in log group patterns for a specific resource ARN
+- **additional**: Append extra log groups to the built-in patterns
+- Changes take effect within 5 minutes (cache TTL)
+
 ## Cost Estimation
 
 ### Monthly Cost Breakdown (Low Volume - 100 incidents/month)
 
 | Service | Usage | Monthly Cost |
 |---------|-------|--------------|
-| **Lambda** | 6 functions, 100 invocations | $0.00 (free tier) |
+| **Lambda** | 7 functions, 100 invocations | $0.00 (free tier) |
 | **Step Functions** | Express, 100 executions | $0.00 (free tier) |
 | **DynamoDB** | On-demand, 100 incidents | $0.25 |
 | **CloudWatch Logs** | 7-day retention | $0.50 |
 | **Amazon Bedrock** | Claude, 100 invocations | $3.00 |
 | **CloudWatch Alarms** | 12 alarms | $1.20 |
+| **Lambda Insights** | 7 functions (optional) | $0.00 (free tier) |
 
 **Total Estimated Monthly Cost:** ~$5
 
@@ -474,6 +551,7 @@ The system validates 31 correctness properties using Hypothesis:
 - ✅ **On-Demand DynamoDB**: No provisioned capacity costs
 - ✅ **7-Day Log Retention**: Reduced storage costs
 - ✅ **90-Day TTL**: Automatic data expiration
+- ✅ **Feature Toggles**: GuardDuty, Health events, and Lambda Insights are opt-in
 
 ### Free Tier Eligibility
 
@@ -575,11 +653,12 @@ terraform force-unlock <lock-id>
 | **Orchestration** | Step Functions (Express) | Workflow coordination |
 | **Compute** | Lambda (Python 3.11+, ARM64) | Serverless functions |
 | **Storage** | DynamoDB (on-demand) | Incident persistence |
-| **Event Bus** | EventBridge + SNS | Event routing |
-| **AI/ML** | Amazon Bedrock (Claude) | Root-cause analysis |
+| **Event Bus** | EventBridge + SNS | Event routing (CloudWatch, GuardDuty, Health) |
+| **AI/ML** | Amazon Bedrock (Claude) | Root-cause analysis with source-specific prompts |
+| **Security** | GuardDuty | Security threat detection |
 | **Secrets** | Secrets Manager | Credential storage |
-| **Configuration** | Parameter Store | Template versioning |
-| **Observability** | CloudWatch | Logging, metrics, and alarms |
+| **Configuration** | Parameter Store | Prompt templates, log group mapping |
+| **Observability** | CloudWatch + Lambda Insights | Logging, metrics, alarms, and resource monitoring |
 
 ### Development
 
@@ -600,13 +679,19 @@ terraform force-unlock <lock-id>
 │       ├── ci-cd.yml        # CI/CD pipeline (lint, test, deploy)
 │       └── codeql-analysis.yml  # SAST security scanning
 ├── src/                     # Lambda function source code
-│   ├── metrics_collector/
-│   ├── logs_collector/
+│   ├── metrics_collector/   # CloudWatch metrics (10+ resource types)
+│   ├── logs_collector/      # Log collection with configurable mapping
+│   │   ├── lambda_function.py
+│   │   └── log_group_resolver.py  # SSM-backed log group resolution
 │   ├── deploy_context_collector/
 │   ├── correlation_engine/
-│   ├── llm_analyzer/
+│   ├── llm_analyzer/        # Bedrock integration with circuit breaker
+│   │   ├── lambda_function.py
+│   │   ├── prompt_builder.py      # Source-specific prompt templates
+│   │   ├── response_parser.py
+│   │   └── circuit_breaker.py
 │   ├── notification_service/
-│   ├── event_transformer/
+│   ├── event_transformer/   # Multi-source event routing
 │   └── shared/              # Shared utilities and models
 ├── terraform/               # Infrastructure as Code
 │   ├── main.tf
@@ -692,13 +777,15 @@ terraform force-unlock <lock-id>
 This project demonstrates:
 
 1. **Event-Driven Architecture**: Loose coupling via SNS/EventBridge for scalability
-2. **Parallel Processing**: Step Functions fan-out pattern for performance
-3. **AI Integration**: Structured LLM prompts with Amazon Bedrock for intelligent analysis
-4. **Security Best Practices**: Least-privilege IAM, explicit denies, no credentials in code
-5. **Observability**: Structured logging, custom metrics, self-monitoring alarms
-6. **Graceful Degradation**: Partial failures don't block workflow completion
-7. **Infrastructure as Code**: Reproducible, version-controlled Terraform modules
-8. **Property-Based Testing**: Hypothesis for comprehensive correctness validation
+2. **Multi-Source Ingestion**: Unified pipeline handling infrastructure, security, and health events
+3. **Parallel Processing**: Step Functions fan-out pattern for performance
+4. **AI Integration**: Source-specific LLM prompts with Amazon Bedrock for tailored analysis
+5. **Security Best Practices**: Least-privilege IAM, explicit denies, no credentials in code
+6. **Observability**: Structured logging, custom metrics, Lambda Insights, self-monitoring alarms
+7. **Config-Driven Design**: Runtime-configurable log group mapping via SSM Parameter Store
+8. **Resilience Patterns**: Circuit breaker, graceful degradation, partial failure handling
+9. **Infrastructure as Code**: Reproducible, version-controlled Terraform modules with feature toggles
+10. **Property-Based Testing**: Hypothesis for comprehensive correctness validation
 
 ## Contributing
 

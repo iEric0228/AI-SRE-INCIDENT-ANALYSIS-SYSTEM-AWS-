@@ -112,6 +112,18 @@ data "aws_iam_policy_document" "logs_collector" {
       values   = ["AI-SRE-IncidentAnalysis"]
     }
   }
+
+  # SSM Parameter Store read for log group mapping configuration
+  statement {
+    sid    = "SSMParameterRead"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter"
+    ]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/${var.project_name}/*"
+    ]
+  }
 }
 
 # Deploy Context Collector Lambda Role
@@ -444,6 +456,49 @@ data "aws_iam_policy_document" "event_transformer" {
       values   = ["AI-SRE-IncidentAnalysis"]
     }
   }
+}
+
+# Lambda Insights managed policy attachments
+resource "aws_iam_role_policy_attachment" "lambda_insights_metrics_collector" {
+  count      = var.enable_lambda_insights ? 1 : 0
+  role       = aws_iam_role.metrics_collector.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_insights_logs_collector" {
+  count      = var.enable_lambda_insights ? 1 : 0
+  role       = aws_iam_role.logs_collector.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_insights_deploy_context_collector" {
+  count      = var.enable_lambda_insights ? 1 : 0
+  role       = aws_iam_role.deploy_context_collector.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_insights_correlation_engine" {
+  count      = var.enable_lambda_insights ? 1 : 0
+  role       = aws_iam_role.correlation_engine.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_insights_llm_analyzer" {
+  count      = var.enable_lambda_insights ? 1 : 0
+  role       = aws_iam_role.llm_analyzer.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_insights_notification_service" {
+  count      = var.enable_lambda_insights ? 1 : 0
+  role       = aws_iam_role.notification_service.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_insights_event_transformer" {
+  count      = var.enable_lambda_insights ? 1 : 0
+  role       = aws_iam_role.event_transformer.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy"
 }
 
 # Step Functions Orchestrator Role

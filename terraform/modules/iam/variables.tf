@@ -22,6 +22,12 @@ variable "dynamodb_table_name" {
   default     = "incident-analysis-store"
 }
 
+variable "enable_lambda_insights" {
+  description = "Enable CloudWatch Lambda Insights for all functions"
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Tags to apply to all IAM resources"
   type        = map(string)

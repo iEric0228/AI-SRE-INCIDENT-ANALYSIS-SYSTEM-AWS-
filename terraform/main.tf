@@ -107,10 +107,11 @@ module "secrets" {
 module "iam" {
   source = "./modules/iam"
 
-  project_name        = var.project_name
-  aws_region          = local.region
-  aws_account_id      = local.account_id
-  dynamodb_table_name = var.dynamodb_table_name
+  project_name           = var.project_name
+  aws_region             = local.region
+  aws_account_id         = local.account_id
+  dynamodb_table_name    = var.dynamodb_table_name
+  enable_lambda_insights = var.enable_lambda_insights
 
   tags = local.common_tags
 }
@@ -141,6 +142,8 @@ module "eventbridge" {
   kms_key_id                   = module.secrets.kms_key_id
   alarm_notification_topic_arn = "" # Will be populated by cloudwatch_alarms module
   email_endpoints              = var.email_notification_endpoints
+  enable_guardduty_events      = var.enable_guardduty_events
+  enable_health_events         = var.enable_health_events
 
   tags = local.common_tags
 
@@ -154,14 +157,16 @@ module "eventbridge" {
 module "lambda" {
   source = "./modules/lambda"
 
-  project_name        = var.project_name
-  aws_region          = local.region
-  iam_role_arns       = module.iam.lambda_role_arns
-  lambda_packages     = local.lambda_packages
-  dynamodb_table_name = module.dynamodb.table_name
-  sns_topic_arn       = module.eventbridge.sns_topic_arn
-  state_machine_arn   = "arn:aws:states:${local.region}:${local.account_id}:stateMachine:${var.project_name}-orchestrator"
-  log_level           = var.lambda_log_level
+  project_name                     = var.project_name
+  aws_region                       = local.region
+  iam_role_arns                    = module.iam.lambda_role_arns
+  lambda_packages                  = local.lambda_packages
+  dynamodb_table_name              = module.dynamodb.table_name
+  sns_topic_arn                    = module.eventbridge.sns_topic_arn
+  state_machine_arn                = "arn:aws:states:${local.region}:${local.account_id}:stateMachine:${var.project_name}-orchestrator"
+  log_level                        = var.lambda_log_level
+  enable_lambda_insights           = var.enable_lambda_insights
+  log_group_mapping_parameter_name = var.log_group_mapping_parameter_name
 
   tags = local.common_tags
 

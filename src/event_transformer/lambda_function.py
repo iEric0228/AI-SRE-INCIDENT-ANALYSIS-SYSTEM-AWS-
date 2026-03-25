@@ -75,7 +75,29 @@ def extract_resource_arn(alarm_event: Dict[str, Any]) -> str:
                 cluster_name = dimensions["ClusterName"]
                 region = alarm_event.get("region", "us-east-1")
                 account = alarm_event.get("account", "")
+                # Distinguish EKS from ECS by metric namespace
+                metric_namespace = metric_info.get("namespace", "")
+                if metric_namespace in ("AWS/ContainerInsights", "ContainerInsights"):
+                    return f"arn:aws:eks:{region}:{account}:cluster/{cluster_name}"
                 return f"arn:aws:ecs:{region}:{account}:cluster/{cluster_name}"
+
+            if "LoadBalancer" in dimensions:
+                lb_value = dimensions["LoadBalancer"]
+                region = alarm_event.get("region", "us-east-1")
+                account = alarm_event.get("account", "")
+                return f"arn:aws:elasticloadbalancing:{region}:{account}:loadbalancer/{lb_value}"
+
+            if "CacheClusterId" in dimensions:
+                cluster_id = dimensions["CacheClusterId"]
+                region = alarm_event.get("region", "us-east-1")
+                account = alarm_event.get("account", "")
+                return f"arn:aws:elasticache:{region}:{account}:cluster:{cluster_id}"
+
+            if "DomainName" in dimensions:
+                domain_name = dimensions["DomainName"]
+                region = alarm_event.get("region", "us-east-1")
+                account = alarm_event.get("account", "")
+                return f"arn:aws:es:{region}:{account}:domain/{domain_name}"
 
         # Fallback to alarm ARN if resource ARN not found
         alarm_arn = detail.get("alarmArn", "")
@@ -188,6 +210,7 @@ def transform_alarm_event(alarm_event: Dict[str, Any]) -> Dict[str, Any]:
             "metricName": metric_name,
             "namespace": namespace,
             "alarmDescription": alarm_description if alarm_description else None,
+            "eventSource": "cloudwatch",
         }
 
         logger.info(
@@ -279,6 +302,219 @@ def publish_to_sns(incident_event: Dict[str, Any]) -> str:
         raise
 
 
+def transform_guardduty_event(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Transform GuardDuty finding event into normalized IncidentEvent structure.
+
+    Args:
+        event: GuardDuty finding event from EventBridge
+
+    Returns:
+        Normalized IncidentEvent dictionary
+    """
+    detail = event.get("detail", {})
+
+    incident_id = str(uuid.uuid4())
+    finding_id = detail.get("id", "")
+    finding_type = detail.get("type", "Unknown")
+    severity_value = detail.get("severity", 0)
+    description = detail.get("description", "")
+    title = detail.get("title", finding_type)
+
+    # Map GuardDuty severity (0-10) to high/medium/low
+    if severity_value >= 7.0:
+        severity = "high"
+    elif severity_value >= 4.0:
+        severity = "medium"
+    else:
+        severity = "low"
+
+    # Extract affected resource ARN
+    resource_info = detail.get("resource", {})
+    resource_arn = _extract_guardduty_resource_arn(resource_info, event)
+
+    # Get timestamp
+    timestamp_str = event.get("time", detail.get("updatedAt", detail.get("createdAt", "")))
+
+    # Calculate TTL (90 days)
+    try:
+        if timestamp_str.endswith("Z"):
+            timestamp_dt = datetime.fromisoformat(timestamp_str[:-1])
+        else:
+            timestamp_dt = datetime.fromisoformat(timestamp_str)
+        ttl = int(timestamp_dt.timestamp()) + 7776000
+    except Exception:
+        ttl = int(datetime.utcnow().timestamp()) + 7776000
+
+    incident_event = {
+        "incidentId": incident_id,
+        "alarmName": title,
+        "alarmArn": finding_id,
+        "resourceArn": resource_arn,
+        "timestamp": timestamp_str,
+        "ttl": ttl,
+        "alarmState": "ALARM",
+        "metricName": finding_type,
+        "namespace": "GuardDuty",
+        "alarmDescription": description,
+        "eventSource": "guardduty",
+        "severity": severity,
+        "guarddutyDetail": {
+            "findingType": finding_type,
+            "severity": severity_value,
+            "accountId": detail.get("accountId", ""),
+            "region": detail.get("region", event.get("region", "")),
+        },
+    }
+
+    logger.info(
+        {
+            "message": "Transformed GuardDuty finding to incident event",
+            "incidentId": incident_id,
+            "findingType": finding_type,
+            "severity": severity,
+            "resourceArn": resource_arn,
+        }
+    )
+
+    return incident_event
+
+
+def _extract_guardduty_resource_arn(resource_info: Dict[str, Any], event: Dict[str, Any]) -> str:
+    """Extract the most relevant resource ARN from a GuardDuty finding."""
+    region = event.get("region", "us-east-1")
+    account = event.get("account", "")
+
+    # Check for EC2 instance
+    instance_details = resource_info.get("instanceDetails", {})
+    if instance_details:
+        instance_id = instance_details.get("instanceId", "")
+        if instance_id:
+            return f"arn:aws:ec2:{region}:{account}:instance/{instance_id}"
+
+    # Check for IAM access key (user)
+    access_key = resource_info.get("accessKeyDetails", {})
+    if access_key:
+        user_name = access_key.get("userName", "")
+        if user_name:
+            return f"arn:aws:iam::{account}:user/{user_name}"
+
+    # Check for S3 bucket
+    s3_details = resource_info.get("s3BucketDetails", [])
+    if s3_details:
+        bucket_name = s3_details[0].get("name", "") if s3_details else ""
+        if bucket_name:
+            return f"arn:aws:s3:::{bucket_name}"
+
+    # Check for EKS cluster
+    eks_details = resource_info.get("eksClusterDetails", {})
+    if eks_details:
+        cluster_name = eks_details.get("name", "")
+        if cluster_name:
+            return f"arn:aws:eks:{region}:{account}:cluster/{cluster_name}"
+
+    # Check for Lambda function
+    lambda_details = resource_info.get("lambdaDetails", {})
+    if lambda_details:
+        function_arn = lambda_details.get("functionArn", "")
+        if function_arn:
+            return function_arn
+
+    # Check for ECS cluster
+    ecs_details = resource_info.get("ecsClusterDetails", {})
+    if ecs_details:
+        cluster_arn = ecs_details.get("arn", "")
+        if cluster_arn:
+            return cluster_arn
+
+    # Check for RDS DB instance
+    rds_details = resource_info.get("rdsDbInstanceDetails", {})
+    if rds_details:
+        db_instance_id = rds_details.get("dbInstanceIdentifier", "")
+        if db_instance_id:
+            return f"arn:aws:rds:{region}:{account}:db:{db_instance_id}"
+
+    return f"arn:aws:guardduty:{region}:{account}:detector/unknown"
+
+
+def transform_health_event(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Transform AWS Health event into normalized IncidentEvent structure.
+
+    Args:
+        event: AWS Health event from EventBridge
+
+    Returns:
+        Normalized IncidentEvent dictionary
+    """
+    detail = event.get("detail", {})
+
+    incident_id = str(uuid.uuid4())
+    event_type_code = detail.get("eventTypeCode", "Unknown")
+    event_type_category = detail.get("eventTypeCategory", "issue")
+    service = detail.get("service", "Unknown")
+    description_parts = detail.get("eventDescription", [])
+    description = description_parts[0].get("latestDescription", "") if description_parts else ""
+
+    # Map Health event category to severity
+    severity = "high" if event_type_category == "issue" else "medium"
+
+    # Extract affected resource ARN from affectedEntities
+    affected_entities = detail.get("affectedEntities", [])
+    resource_arn = (
+        affected_entities[0].get("entityValue", "")
+        if affected_entities
+        else f"aws.health/{service}"
+    )
+
+    # Get timestamp
+    timestamp_str = event.get("time", detail.get("startTime", ""))
+
+    # Calculate TTL (90 days)
+    try:
+        if timestamp_str.endswith("Z"):
+            timestamp_dt = datetime.fromisoformat(timestamp_str[:-1])
+        else:
+            timestamp_dt = datetime.fromisoformat(timestamp_str)
+        ttl = int(timestamp_dt.timestamp()) + 7776000
+    except Exception:
+        ttl = int(datetime.utcnow().timestamp()) + 7776000
+
+    incident_event = {
+        "incidentId": incident_id,
+        "alarmName": f"{service}: {event_type_code}",
+        "alarmArn": detail.get("eventArn", ""),
+        "resourceArn": resource_arn,
+        "timestamp": timestamp_str,
+        "ttl": ttl,
+        "alarmState": "ALARM",
+        "metricName": event_type_code,
+        "namespace": f"AWS/Health/{service}",
+        "alarmDescription": description,
+        "eventSource": "health",
+        "severity": severity,
+        "healthDetail": {
+            "eventTypeCode": event_type_code,
+            "eventTypeCategory": event_type_category,
+            "service": service,
+            "statusCode": detail.get("statusCode", ""),
+        },
+    }
+
+    logger.info(
+        {
+            "message": "Transformed Health event to incident event",
+            "incidentId": incident_id,
+            "eventTypeCode": event_type_code,
+            "service": service,
+            "severity": severity,
+            "resourceArn": resource_arn,
+        }
+    )
+
+    return incident_event
+
+
 def _unwrap_sns_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Unwrap an SNS-delivered event into the EventBridge format expected by
@@ -290,6 +526,10 @@ def _unwrap_sns_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     record = event["Records"][0]["Sns"]
     message = json.loads(record["Message"])
+
+    # GuardDuty or Health events pass through as full EventBridge events
+    if message.get("source") in ("aws.guardduty", "aws.health"):
+        return message
 
     # Detect native CloudWatch alarm notification format
     if "AlarmName" in message or "Trigger" in message:
@@ -391,18 +631,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         )
 
-        # Validate event source
-        if event.get("source") != "aws.cloudwatch":
+        # Route based on event source
+        event_source = event.get("source", "")
+
+        if event_source == "aws.guardduty":
+            incident_event = transform_guardduty_event(event)
+        elif event_source == "aws.health":
+            incident_event = transform_health_event(event)
+        elif event_source == "aws.cloudwatch":
+            incident_event = transform_alarm_event(event)
+        else:
             logger.warning(
                 {
-                    "message": "Unexpected event source",
-                    "source": event.get("source"),
-                    "expected": "aws.cloudwatch",
+                    "message": "Unexpected event source, treating as CloudWatch alarm",
+                    "source": event_source,
                 }
             )
-
-        # Transform alarm event to incident event
-        incident_event = transform_alarm_event(event)
+            incident_event = transform_alarm_event(event)
 
         # Start Step Functions workflow
         state_machine_arn = os.environ.get("STATE_MACHINE_ARN", "")

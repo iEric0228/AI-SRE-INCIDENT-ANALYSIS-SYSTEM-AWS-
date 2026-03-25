@@ -64,6 +64,24 @@ variable "log_level" {
   default     = "INFO"
 }
 
+variable "enable_lambda_insights" {
+  description = "Enable CloudWatch Lambda Insights for all functions"
+  type        = bool
+  default     = true
+}
+
+variable "lambda_insights_layer_version" {
+  description = "Version of the Lambda Insights extension layer"
+  type        = number
+  default     = 21
+}
+
+variable "log_group_mapping_parameter_name" {
+  description = "SSM parameter name for custom log group mappings"
+  type        = string
+  default     = "/ai-sre-incident-analysis/log-group-mappings"
+}
+
 variable "tags" {
   description = "Tags to apply to all Lambda resources"
   type        = map(string)
